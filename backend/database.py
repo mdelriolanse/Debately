@@ -327,6 +327,24 @@ def migrate_add_validity_columns():
     finally:
         conn.close()
 
+def migrate_add_votes_column():
+    """Add votes column to arguments table if it doesn't exist."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("PRAGMA table_info(arguments)")
+        columns = [row[1] for row in cursor.fetchall()]
+        
+        if 'votes' not in columns:
+            cursor.execute("ALTER TABLE arguments ADD COLUMN votes INTEGER DEFAULT 0")
+            conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
 def get_argument(argument_id: int) -> Optional[dict]:
     """Get a single argument by ID."""
     conn = get_db_connection()
@@ -437,4 +455,40 @@ def save_argument_matches(topic_id: int, matches: list):
     
     conn.commit()
     conn.close()
+
+def upvote_argument(argument_id: int) -> int:
+    """Increment vote count for an argument and return new count."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute(
+        "UPDATE arguments SET votes = votes + 1 WHERE id = ?",
+        (argument_id,)
+    )
+    
+    cursor.execute("SELECT votes FROM arguments WHERE id = ?", (argument_id,))
+    row = cursor.fetchone()
+    votes = row[0] if row else 0
+    
+    conn.commit()
+    conn.close()
+    return votes
+
+def downvote_argument(argument_id: int) -> int:
+    """Decrement vote count for an argument and return new count."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute(
+        "UPDATE arguments SET votes = votes - 1 WHERE id = ?",
+        (argument_id,)
+    )
+    
+    cursor.execute("SELECT votes FROM arguments WHERE id = ?", (argument_id,))
+    row = cursor.fetchone()
+    votes = row[0] if row else 0
+    
+    conn.commit()
+    conn.close()
+    return votes
 

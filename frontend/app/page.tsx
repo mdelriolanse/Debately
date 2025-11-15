@@ -4,14 +4,17 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Users, Brain, Scale, Sparkles, ArrowLeft, Plus, X, Loader2, CheckCircle2, Star } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { Users, Brain, Scale, Sparkles, ArrowLeft, Plus, X, Loader2, CheckCircle2, Star, ArrowUp, ArrowDown } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
 import { 
   getTopics, 
   createTopic, 
   getTopic, 
   createArgument, 
   verifyArgument,
+  getArgumentMatches,
+  upvoteArgument,
+  downvoteArgument,
   type TopicListItem,
   type TopicDetailResponse,
   type ArgumentCreate,
@@ -28,6 +31,7 @@ export default function Home() {
   const [lines, setLines] = useState<Array<{ x1: number; y1: number; x2: number; y2: number; reason?: string | null }>>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [rejectionError, setRejectionError] = useState<{ message: string; reasoning: string } | null>(null)
   const [newDebateForm, setNewDebateForm] = useState({
     title: '',
     createdBy: 'user', // Default username - could be made dynamic
@@ -42,6 +46,7 @@ export default function Home() {
     side: 'pro'
   })
   const [verifyingArgumentId, setVerifyingArgumentId] = useState<number | null>(null)
+  const [votingArgumentId, setVotingArgumentId] = useState<number | null>(null)
 
   // Helper function to extract domain from URL
   const getDomain = (url: string): string => {
@@ -276,6 +281,7 @@ export default function Home() {
 
     setLoading(true)
     setError(null)
+    setRejectionError(null)
 
     try {
       await createArgument(selectedTopicId, {
@@ -290,9 +296,18 @@ export default function Home() {
       setNewArgument({ title: '', content: '', sources: '', side: 'pro' })
       setShowAddArgumentForm({ side: null })
       await fetchTopicDetails(selectedTopicId)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add argument')
-      console.error('Error adding argument:', err)
+    } catch (err: any) {
+      // Check if it's a 400 error (irrelevant argument rejection)
+      if (err?.response?.status === 400 || err?.status === 400) {
+        const errorData = err?.response?.data?.detail || err?.detail || {}
+        setRejectionError({
+          message: errorData.message || errorData.error || 'This argument was rejected as not relevant to the debate topic.',
+          reasoning: errorData.reasoning || 'The argument contains no verifiable factual claims related to the debate topic.'
+        })
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to add argument')
+        console.error('Error adding argument:', err)
+      }
     } finally {
       setLoading(false)
     }
@@ -313,6 +328,58 @@ export default function Home() {
       console.error('Error verifying argument:', err)
     } finally {
       setVerifyingArgumentId(null)
+    }
+  }
+
+  const handleVote = async (argumentId: number, voteType: 'upvote' | 'downvote') => {
+    if (votingArgumentId === argumentId) return // Prevent double-clicking
+    
+    setVotingArgumentId(argumentId)
+    setError(null)
+
+    // Optimistic update
+    if (selectedTopic) {
+      const updatedTopic = { ...selectedTopic }
+      const allArgs = [...updatedTopic.pro_arguments, ...updatedTopic.con_arguments]
+      const arg = allArgs.find(a => a.id === argumentId)
+      if (arg) {
+        const oldVotes = arg.votes || 0
+        arg.votes = voteType === 'upvote' ? oldVotes + 1 : oldVotes - 1
+        setSelectedTopic(updatedTopic)
+      }
+    }
+
+    try {
+      const result = voteType === 'upvote' 
+        ? await upvoteArgument(argumentId)
+        : await downvoteArgument(argumentId)
+      
+      // Update with actual result
+      if (selectedTopic) {
+        const updatedTopic = { ...selectedTopic }
+        const allArgs = [...updatedTopic.pro_arguments, ...updatedTopic.con_arguments]
+        const arg = allArgs.find(a => a.id === argumentId)
+        if (arg) {
+          arg.votes = result.votes
+          setSelectedTopic(updatedTopic)
+        }
+      }
+    } catch (err) {
+      // Revert optimistic update on error
+      if (selectedTopic) {
+        const updatedTopic = { ...selectedTopic }
+        const allArgs = [...updatedTopic.pro_arguments, ...updatedTopic.con_arguments]
+        const arg = allArgs.find(a => a.id === argumentId)
+        if (arg) {
+          const oldVotes = arg.votes || 0
+          arg.votes = voteType === 'upvote' ? oldVotes - 1 : oldVotes + 1
+          setSelectedTopic(updatedTopic)
+        }
+      }
+      setError(err instanceof Error ? err.message : 'Failed to vote')
+      console.error('Error voting:', err)
+    } finally {
+      setVotingArgumentId(null)
     }
   }
 
@@ -593,20 +660,78 @@ export default function Home() {
                   onClick={() => handleSelectTopic(topic)}
                 >
                   <h3 className="text-2xl font-semibold mb-4">{topic.question}</h3>
-                  <div className="flex gap-8 text-sm text-gray-400">
-                    <span className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-green-500 rounded-full" />
-                      {topic.pro_count} Pro Arguments
-                    </span>
-                    <span className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-rose-500 rounded-full" />
-                      {topic.con_count} Con Arguments
-                    </span>
-                    {topic.pro_count > 0 && topic.con_count > 0 && (
-                      <span className="flex items-center gap-2">
-                        <Brain className="w-4 h-4 text-purple-400" />
-                        Ready for Analysis
+                  <div className="space-y-3">
+                    {/* Argument counts - always show */}
+                    <div className="flex gap-6 text-sm">
+                      <span className="flex items-center gap-2 text-green-400">
+                        <div className="w-2 h-2 bg-green-500 rounded-full" />
+                        <span className="font-semibold">{topic.pro_count}</span> PRO
                       </span>
+                      <span className="flex items-center gap-2 text-rose-400">
+                        <div className="w-2 h-2 bg-rose-500 rounded-full" />
+                        <span className="font-semibold">{topic.con_count}</span> CON
+                      </span>
+                      {topic.controversy_level && (
+                        <span className={`flex items-center gap-1.5 text-xs px-2 py-0.5 rounded ${
+                          topic.controversy_level === 'Highly Contested' 
+                            ? 'bg-red-500/20 text-red-400' 
+                            : topic.controversy_level === 'Moderately Contested'
+                            ? 'bg-yellow-500/20 text-yellow-400'
+                            : 'bg-green-500/20 text-green-400'
+                        }`}>
+                          {topic.controversy_level === 'Highly Contested' && '🔥'}
+                          {topic.controversy_level}
+                        </span>
+                      )}
+                    </div>
+                    {/* Validity scores - show if available */}
+                    {(topic.pro_avg_validity !== null && topic.pro_avg_validity !== undefined) || 
+                     (topic.con_avg_validity !== null && topic.con_avg_validity !== undefined) ? (
+                      <div className="flex gap-6 text-xs text-gray-400">
+                        {topic.pro_avg_validity !== null && topic.pro_avg_validity !== undefined && (
+                          <span className="flex items-center gap-1.5">
+                            <span className="text-green-400">PRO:</span>
+                            <div className="flex items-center gap-0.5">
+                              {[...Array(5)].map((_, i) => (
+                                <Star
+                                  key={i}
+                                  className={`w-3 h-3 ${
+                                    i < Math.round(topic.pro_avg_validity!)
+                                      ? 'fill-yellow-400 text-yellow-400'
+                                      : 'text-gray-600 fill-transparent'
+                                  }`}
+                                />
+                              ))}
+                            </div>
+                            <span className="text-gray-500">({topic.pro_avg_validity})</span>
+                          </span>
+                        )}
+                        {topic.con_avg_validity !== null && topic.con_avg_validity !== undefined && (
+                          <span className="flex items-center gap-1.5">
+                            <span className="text-rose-400">CON:</span>
+                            <div className="flex items-center gap-0.5">
+                              {[...Array(5)].map((_, i) => (
+                                <Star
+                                  key={i}
+                                  className={`w-3 h-3 ${
+                                    i < Math.round(topic.con_avg_validity!)
+                                      ? 'fill-yellow-400 text-yellow-400'
+                                      : 'text-gray-600 fill-transparent'
+                                  }`}
+                                />
+                              ))}
+                            </div>
+                            <span className="text-gray-500">({topic.con_avg_validity})</span>
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      topic.pro_count > 0 && topic.con_count > 0 && (
+                        <span className="flex items-center gap-2 text-xs text-gray-500">
+                          <Brain className="w-3 h-3 text-purple-400" />
+                          Not verified yet
+                        </span>
+                      )
                     )}
                   </div>
                 </Card>
@@ -668,6 +793,36 @@ export default function Home() {
             <Card className="bg-red-950/30 border-red-500/30 p-4 mb-6">
               <p className="text-red-400">{error}</p>
             </Card>
+          )}
+
+          {/* Rejection Error Modal */}
+          {rejectionError && (
+            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+              <Card className="bg-[#1a1a1a] border-red-500/50 p-6 max-w-lg w-full">
+                <div className="flex items-start gap-4">
+                  <div className="text-red-400 text-2xl">❌</div>
+                  <div className="flex-1">
+                    <h3 className="text-xl font-semibold text-red-400 mb-3">Argument Rejected</h3>
+                    <p className="text-gray-300 mb-3">{rejectionError.message}</p>
+                    <div className="bg-black/30 border border-yellow-500/20 rounded p-3 mb-4">
+                      <p className="text-xs text-yellow-300 font-semibold mb-1">Reasoning:</p>
+                      <p className="text-xs text-gray-400">{rejectionError.reasoning}</p>
+                    </div>
+                    {selectedTopic && (
+                      <p className="text-sm text-gray-500 mb-4">
+                        Please submit an argument with factual claims related to: <span className="text-gray-300 font-semibold">"{selectedTopic.question}"</span>
+                      </p>
+                    )}
+                    <Button
+                      onClick={() => setRejectionError(null)}
+                      className="w-full bg-red-600 hover:bg-red-700 text-white"
+                    >
+                      Close
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            </div>
           )}
 
           <div className="mb-12">
@@ -770,8 +925,46 @@ export default function Home() {
                                        arg.validity_score !== null && arg.validity_score !== undefined ? 
                                        parseInt(String(arg.validity_score)) : null
                   
+                  const voteCount = arg.votes || 0
+                  const voteColor = voteCount > 0 ? 'text-green-400' : voteCount < 0 ? 'text-red-400' : 'text-gray-500'
+                  
                   return (
                   <Card key={arg.id} className="bg-[#0f1f0f] border-green-900/30 p-6 hover:border-green-500/50 transition-colors">
+                    {/* Voting UI */}
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="flex items-center gap-1 bg-black/30 rounded px-2 py-1 border border-gray-700/50">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleVote(arg.id, 'upvote')}
+                          disabled={votingArgumentId === arg.id}
+                          className="h-6 w-6 p-0 hover:bg-green-950/30 text-green-400 hover:text-green-300"
+                        >
+                          {votingArgumentId === arg.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <ArrowUp className="w-3 h-3" />
+                          )}
+                        </Button>
+                        <span className={`text-sm font-semibold min-w-[2rem] text-center ${voteColor}`}>
+                          {voteCount > 0 ? `+${voteCount}` : voteCount}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleVote(arg.id, 'downvote')}
+                          disabled={votingArgumentId === arg.id}
+                          className="h-6 w-6 p-0 hover:bg-red-950/30 text-red-400 hover:text-red-300"
+                        >
+                          {votingArgumentId === arg.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <ArrowDown className="w-3 h-3" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                    
                     <div className="flex items-start justify-between mb-2">
                       <h5 className="text-green-400 font-semibold flex-1">{arg.title}</h5>
                       {validityScore !== null && validityScore !== undefined && validityScore > 0 ? (
@@ -797,9 +990,17 @@ export default function Home() {
                         <p className="text-xs text-gray-400">{arg.validity_reasoning}</p>
                       </div>
                     )}
-                    {arg.key_urls && arg.key_urls.length > 0 && arg.key_urls.length <= 3 && (
+                    {/* User-provided sources */}
+                    {arg.sources && arg.sources.trim() !== '' && (
                       <div className="mt-3 pt-3 border-t border-gray-700/50">
-                        <p className="text-xs text-gray-500 mb-2">Sources:</p>
+                        <p className="text-xs text-gray-400 mb-2 font-semibold">Provided by author:</p>
+                        <p className="text-xs text-gray-500 font-mono break-words">{arg.sources}</p>
+                      </div>
+                    )}
+                    {/* Fact-checker sources */}
+                    {arg.key_urls && arg.key_urls.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-gray-700/50">
+                        <p className="text-xs text-yellow-400 mb-2 font-semibold">Verified using:</p>
                         <div className="flex flex-wrap gap-2">
                           {arg.key_urls.slice(0, 3).map((url, idx) => (
                             <a
@@ -823,9 +1024,6 @@ export default function Home() {
                     )}
                     <div className="flex justify-between items-center mt-3">
                       <div className="flex gap-2">
-                        {arg.sources && (
-                          <span className="text-xs text-gray-500 font-mono">Sources: {arg.sources}</span>
-                        )}
                         <span className="text-xs text-gray-500 font-mono">by {arg.author}</span>
                       </div>
                       <Button
@@ -932,8 +1130,46 @@ export default function Home() {
                                        arg.validity_score !== null && arg.validity_score !== undefined ? 
                                        parseInt(String(arg.validity_score)) : null
                   
+                  const voteCount = arg.votes || 0
+                  const voteColor = voteCount > 0 ? 'text-green-400' : voteCount < 0 ? 'text-red-400' : 'text-gray-500'
+                  
                   return (
                   <Card key={arg.id} className="bg-[#1f0f0f] border-rose-900/30 p-6 hover:border-rose-500/50 transition-colors">
+                    {/* Voting UI */}
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="flex items-center gap-1 bg-black/30 rounded px-2 py-1 border border-gray-700/50">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleVote(arg.id, 'upvote')}
+                          disabled={votingArgumentId === arg.id}
+                          className="h-6 w-6 p-0 hover:bg-green-950/30 text-green-400 hover:text-green-300"
+                        >
+                          {votingArgumentId === arg.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <ArrowUp className="w-3 h-3" />
+                          )}
+                        </Button>
+                        <span className={`text-sm font-semibold min-w-[2rem] text-center ${voteColor}`}>
+                          {voteCount > 0 ? `+${voteCount}` : voteCount}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleVote(arg.id, 'downvote')}
+                          disabled={votingArgumentId === arg.id}
+                          className="h-6 w-6 p-0 hover:bg-red-950/30 text-red-400 hover:text-red-300"
+                        >
+                          {votingArgumentId === arg.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <ArrowDown className="w-3 h-3" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                    
                     <div className="flex items-start justify-between mb-2">
                       <h5 className="text-rose-400 font-semibold flex-1">{arg.title}</h5>
                       {validityScore !== null && validityScore !== undefined && validityScore > 0 ? (
@@ -959,9 +1195,17 @@ export default function Home() {
                         <p className="text-xs text-gray-400">{arg.validity_reasoning}</p>
                       </div>
                     )}
-                    {arg.key_urls && arg.key_urls.length > 0 && arg.key_urls.length <= 3 && (
+                    {/* User-provided sources */}
+                    {arg.sources && arg.sources.trim() !== '' && (
                       <div className="mt-3 pt-3 border-t border-gray-700/50">
-                        <p className="text-xs text-gray-500 mb-2">Sources:</p>
+                        <p className="text-xs text-gray-400 mb-2 font-semibold">Provided by author:</p>
+                        <p className="text-xs text-gray-500 font-mono break-words">{arg.sources}</p>
+                      </div>
+                    )}
+                    {/* Fact-checker sources */}
+                    {arg.key_urls && arg.key_urls.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-gray-700/50">
+                        <p className="text-xs text-yellow-400 mb-2 font-semibold">Verified using:</p>
                         <div className="flex flex-wrap gap-2">
                           {arg.key_urls.slice(0, 3).map((url, idx) => (
                             <a
@@ -985,9 +1229,6 @@ export default function Home() {
                     )}
                     <div className="flex justify-between items-center mt-3">
                       <div className="flex gap-2">
-                        {arg.sources && (
-                          <span className="text-xs text-gray-500 font-mono">Sources: {arg.sources}</span>
-                        )}
                         <span className="text-xs text-gray-500 font-mono">by {arg.author}</span>
                       </div>
                       <Button

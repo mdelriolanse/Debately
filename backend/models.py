@@ -51,6 +51,7 @@ class ArgumentResponse(BaseModel):
     validity_reasoning: Optional[str] = None
     validity_checked_at: Optional[str] = None
     key_urls: Optional[List[str]] = None
+    votes: Optional[int] = 0
 
     class Config:
         from_attributes = True

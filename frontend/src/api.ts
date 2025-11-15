@@ -25,6 +25,9 @@ export interface TopicListItem {
   con_count: number;
   created_by?: string;
   created_at?: string;
+  pro_avg_validity?: number | null;
+  con_avg_validity?: number | null;
+  controversy_level?: string | null;
 }
 
 export interface ArgumentCreate {
@@ -48,6 +51,7 @@ export interface ArgumentResponse {
   validity_reasoning?: string | null;
   validity_checked_at?: string | null;
   key_urls?: string[] | null;
+  votes?: number | null;
 }
 
 export interface TopicDetailResponse {
@@ -77,11 +81,21 @@ export interface ValidityVerdictResponse {
   source_count: number;
 }
 
+export interface ArgumentMatch {
+  pro_id: number;
+  con_id: number;
+  reason?: string | null;
+}
+
 // Error handling helper
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+    const error: any = new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+    error.status = response.status;
+    error.response = { data: { detail: errorData }, status: response.status };
+    error.detail = errorData;
+    throw error;
   }
   return response.json();
 }
@@ -236,5 +250,47 @@ export async function getArgumentsSortedByValidity(
     },
   });
   return handleResponse<ArgumentResponse[]>(response);
+}
+
+/**
+ * Get argument matches (pro/con pairs that rebut each other)
+ * POST /api/topics/{topic_id}/match-arguments
+ */
+export async function getArgumentMatches(topicId: number): Promise<ArgumentMatch[]> {
+  const response = await fetch(`${API_BASE_URL}/api/topics/${topicId}/match-arguments`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+  return handleResponse<ArgumentMatch[]>(response);
+}
+
+/**
+ * Upvote an argument
+ * POST /api/arguments/{argument_id}/upvote
+ */
+export async function upvoteArgument(argumentId: number): Promise<{ argument_id: number; votes: number }> {
+  const response = await fetch(`${API_BASE_URL}/api/arguments/${argumentId}/upvote`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+  return handleResponse<{ argument_id: number; votes: number }>(response);
+}
+
+/**
+ * Downvote an argument
+ * POST /api/arguments/{argument_id}/downvote
+ */
+export async function downvoteArgument(argumentId: number): Promise<{ argument_id: number; votes: number }> {
+  const response = await fetch(`${API_BASE_URL}/api/arguments/${argumentId}/downvote`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+  return handleResponse<{ argument_id: number; votes: number }>(response);
 }
 
