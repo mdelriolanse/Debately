@@ -146,9 +146,10 @@ export default function Home() {
     setError(null)
 
     try {
-      // Validate that we have at least one pro and one con argument
-      if (newDebateForm.proArgs.length === 0 || newDebateForm.conArgs.length === 0) {
-        throw new Error('Please provide at least one pro argument and one con argument')
+      // Validate that we have at least one argument total (either pro or con)
+      if ((newDebateForm.proArgs.length === 0 || newDebateForm.proArgs.every(a => !a.title.trim() && !a.content.trim()))
+          && (newDebateForm.conArgs.length === 0 || newDebateForm.conArgs.every(a => !a.title.trim() && !a.content.trim()))) {
+        throw new Error('Please provide at least one pro or con argument')
       }
 
       // Create the topic
@@ -338,7 +339,6 @@ export default function Home() {
                         )}
                       </div>
                       <Input
-                        required
                         value={arg.title}
                         onChange={(e) => {
                           const newProArgs = [...newDebateForm.proArgs]
@@ -349,7 +349,6 @@ export default function Home() {
                         className="bg-black/50 border-green-800/30 text-white mb-3"
                       />
                       <Textarea
-                        required
                         value={arg.content}
                         onChange={(e) => {
                           const newProArgs = [...newDebateForm.proArgs]
@@ -411,7 +410,6 @@ export default function Home() {
                         )}
                       </div>
                       <Input
-                        required
                         value={arg.title}
                         onChange={(e) => {
                           const newConArgs = [...newDebateForm.conArgs]
@@ -422,7 +420,6 @@ export default function Home() {
                         className="bg-black/50 border-rose-800/30 text-white mb-3"
                       />
                       <Textarea
-                        required
                         value={arg.content}
                         onChange={(e) => {
                           const newConArgs = [...newDebateForm.conArgs]
@@ -687,7 +684,7 @@ export default function Home() {
               
               {selectedTopic.pro_arguments.length === 0 ? (
                 <Card className="bg-[#0f1f0f] border-green-900/30 p-6 text-center">
-                  <p className="text-gray-500 text-sm">No pro arguments yet</p>
+                  <p className="text-gray-500 text-sm">Nothing here yet, add to the debate!</p>
                 </Card>
               ) : (
                 selectedTopic.pro_arguments.map((arg) => (
@@ -770,7 +767,7 @@ export default function Home() {
               
               {selectedTopic.con_arguments.length === 0 ? (
                 <Card className="bg-[#1f0f0f] border-rose-900/30 p-6 text-center">
-                  <p className="text-gray-500 text-sm">No con arguments yet</p>
+                  <p className="text-gray-500 text-sm">Nothing here yet, add to the debate!</p>
                 </Card>
               ) : (
                 selectedTopic.con_arguments.map((arg) => (

@@ -98,7 +98,8 @@ def test_create_argument_validation():
         "content": "Test content 2",
         "author": "user1"
     })
-    assert response.status_code == 400
+    # New behavior: allow multiple arguments on the same side even if the opposite side is empty
+    assert response.status_code == 201
 
 def test_get_arguments():
     """Test getting arguments."""

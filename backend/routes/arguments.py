@@ -18,22 +18,10 @@ async def create_argument(topic_id: int, argument: ArgumentCreate):
         raise HTTPException(status_code=400, detail="side must be either 'pro' or 'con'")
     
     # Validation: Topic must have at least 1 pro AND 1 con total
-    # Allow first argument of either side, but after that require both sides
-    counts = database.get_argument_counts(topic_id)
-    
-    # If topic has one side but not the other, only allow arguments from the missing side
-    if counts['pro_count'] == 0 and counts['con_count'] > 0:
-        if argument.side != 'pro':
-            raise HTTPException(
-                status_code=400,
-                detail="Topic must have at least 1 pro argument AND 1 con argument. Please add a pro argument first."
-            )
-    elif counts['con_count'] == 0 and counts['pro_count'] > 0:
-        if argument.side != 'con':
-            raise HTTPException(
-                status_code=400,
-                detail="Topic must have at least 1 pro argument AND 1 con argument. Please add a con argument first."
-            )
+    # Previous behavior required adding the missing opposite-side argument before allowing
+    # additional arguments on the same side. We now allow creating multiple arguments
+    # on the same side even when the other side is empty. This lets topics start with
+    # a single pro OR con and grow naturally.
     
     try:
         argument_id = database.create_argument(
