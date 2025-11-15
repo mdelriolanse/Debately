@@ -91,10 +91,11 @@ def create_topic(question: str, created_by: str) -> int:
     return topic_id
 
 def get_all_topics() -> list:
-    """Get all topics with pro/con counts."""
+    """Get all topics with pro/con counts and validity metrics."""
     conn = get_db_connection()
     cursor = conn.cursor()
     
+    # First get basic topic info with counts
     cursor.execute("""
         SELECT 
             t.id,
@@ -109,9 +110,61 @@ def get_all_topics() -> list:
         ORDER BY t.created_at DESC
     """)
     
-    rows = cursor.fetchall()
+    topics = [dict(row) for row in cursor.fetchall()]
+    
+    # Calculate validity metrics for each topic
+    for topic in topics:
+        topic_id = topic['id']
+        
+        # Get average validity for PRO arguments
+        cursor.execute("""
+            SELECT AVG(validity_score) as avg_validity
+            FROM arguments
+            WHERE topic_id = ? AND side = 'pro' AND validity_score IS NOT NULL
+        """, (topic_id,))
+        pro_avg_result = cursor.fetchone()
+        pro_avg = pro_avg_result[0] if pro_avg_result and pro_avg_result[0] is not None else None
+        if pro_avg is not None:
+            topic['pro_avg_validity'] = float(round(pro_avg, 1))
+        else:
+            topic['pro_avg_validity'] = None
+        
+        # Get average validity for CON arguments
+        cursor.execute("""
+            SELECT AVG(validity_score) as avg_validity
+            FROM arguments
+            WHERE topic_id = ? AND side = 'con' AND validity_score IS NOT NULL
+        """, (topic_id,))
+        con_avg_result = cursor.fetchone()
+        con_avg = con_avg_result[0] if con_avg_result and con_avg_result[0] is not None else None
+        if con_avg is not None:
+            topic['con_avg_validity'] = float(round(con_avg, 1))
+        else:
+            topic['con_avg_validity'] = None
+        
+        # Calculate controversy level
+        pro_count = topic['pro_count']
+        con_count = topic['con_count']
+        total_count = pro_count + con_count
+        
+        if total_count == 0:
+            topic['controversy_level'] = None
+        else:
+            # Calculate balance ratio (closer to 0.5 = more balanced/contested)
+            balance_ratio = min(pro_count, con_count) / total_count if total_count > 0 else 0
+            
+            if balance_ratio >= 0.4:
+                # Highly balanced (40%+ on both sides)
+                topic['controversy_level'] = "Highly Contested"
+            elif balance_ratio >= 0.25:
+                # Moderately balanced (25-40% on smaller side)
+                topic['controversy_level'] = "Moderately Contested"
+            else:
+                # One-sided (less than 25% on smaller side)
+                topic['controversy_level'] = "Clear Consensus"
+    
     conn.close()
-    return [dict(row) for row in rows]
+    return topics
 
 def get_topic_with_arguments(topic_id: int) -> Optional[dict]:
     """Get a topic with its arguments, sorted by validity score (highest first)."""

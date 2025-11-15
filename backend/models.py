@@ -31,6 +31,9 @@ class TopicListItem(BaseModel):
     con_count: int
     created_by: Optional[str] = None
     created_at: Optional[str] = None
+    pro_avg_validity: Optional[float] = None
+    con_avg_validity: Optional[float] = None
+    controversy_level: Optional[str] = None
 
     class Config:
         from_attributes = True

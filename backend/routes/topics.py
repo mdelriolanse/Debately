@@ -57,7 +57,8 @@ async def get_topic(topic_id: int):
                 try:
                     verdict = fact_checker.verify_argument(
                         title=arg['title'],
-                        content=arg['content']
+                        content=arg['content'],
+                        debate_question=topic_data['question']
                     )
                     database.update_argument_validity(
                         argument_id=arg['id'],

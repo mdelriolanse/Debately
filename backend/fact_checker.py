@@ -33,7 +33,7 @@ class ValidityVerdict(BaseModel):
     source_count: int = Field(..., description="Number of sources found")
 
 
-def extract_core_claim(title: str, content: str) -> str:
+def extract_core_claim(title: str, content: str, debate_question: str) -> str:
     """
     STEP 1: Extract the core verifiable claim from an argument.
     
@@ -42,16 +42,21 @@ def extract_core_claim(title: str, content: str) -> str:
     Args:
         title: Argument title
         content: Argument content
+        debate_question: The debate topic/question this argument is responding to
     
     Returns:
         Extracted claim in 2 sentences or less
     """
-    prompt = f"""Extract the core verifiable claim from this argument. Focus on factual statements that can be researched and verified, not opinions or rhetoric.
+    prompt = f"""You are analyzing an argument in a debate about: {debate_question}
+
+Extract the core verifiable claim from this argument. Focus on factual statements that can be researched and verified, not opinions or rhetoric.
 
 Title: {title}
 Content: {content}
 
-Return ONLY the core factual claim in 2 sentences or less. Remove all opinion, rhetoric, and emotional language. Focus on what can be factually verified."""
+Return ONLY the core factual claim in 2 sentences or less. Remove all opinion, rhetoric, and emotional language. Focus on what can be factually verified related to the debate topic.
+
+If the argument contains no verifiable factual claims (only opinions, insults, or emotional statements), return "NO VERIFIABLE FACTUAL CLAIMS"."""
 
     try:
         message = claude_client.messages.create(
@@ -134,7 +139,7 @@ Content: {content}...
     return "\n".join(formatted)
 
 
-def analyze_and_score(original_claim: str, tavily_results: List[Dict]) -> ValidityVerdict:
+def analyze_and_score(original_claim: str, tavily_results: List[Dict], debate_question: str) -> ValidityVerdict:
     """
     STEP 3: Analyze evidence and assign validity score.
     
@@ -156,26 +161,37 @@ def analyze_and_score(original_claim: str, tavily_results: List[Dict]) -> Validi
         scores = [r.get('score', 0) for r in tavily_results]
         avg_score = sum(scores) / len(scores) if scores else 0.0
     
-    prompt = f"""You are a fact-checker analyzing the validity of a claim based on search results.
+    prompt = f"""You are fact-checking an argument in a debate about: {debate_question}
+
+The argument is making claims related to this debate topic. Verify whether the factual claims supporting their position are true.
+
+CRITICAL INSTRUCTIONS:
+- Opinions like "this is bad" or "you guys suck" are NOT factual claims and should result in LOW validity scores (1 star)
+- Only verify objective, factual claims that can be researched
+- If the argument contains no verifiable factual claims, give it a 1-star rating
+- If the claim is "NO VERIFIABLE FACTUAL CLAIMS", automatically assign 1 star
 
 ORIGINAL CLAIM:
 {original_claim}
 
-SEARCH RESULTS:
+SEARCH RESULTS (pre-filtered for high-quality sources with relevance score > 0.5):
 {formatted_results}
 
 Analyze the evidence and assign a validity score from 1-5 stars based on these criteria:
 
-- 5 stars: Fully supported by multiple high-quality sources (average relevance score > 0.8)
-- 4 stars: Mostly supported with good sources (average relevance score > 0.6)
-- 3 stars: Partially supported, mixed evidence
-- 2 stars: Mostly unsupported or low-quality sources
-- 1 star: No credible evidence or contradicted by sources
+- 5 stars: Fully supported by multiple high-quality sources (average relevance score > 0.8, at least 2-3 sources)
+- 4 stars: Mostly supported with good sources (average relevance score > 0.6, at least 2 sources)
+- 3 stars: Partially supported, mixed evidence (1-2 sources with moderate scores)
+- 2 stars: Limited support from few sources (only 1 source or low average score)
+- 1 star: No credible evidence, contradicted by sources, or contains no verifiable factual claims
+
+IMPORTANT: These sources have already been filtered for quality (relevance score > 0.5). 
+If very few sources pass this threshold, the validity score should be lower.
 
 Consider BOTH the number of sources AND their quality (relevance scores).
 
 Average relevance score of sources: {avg_score:.3f}
-Number of sources found: {source_count}
+Number of high-quality sources found: {source_count}
 
 Return a JSON object with this exact structure. Make sure all strings are properly escaped:
 {{
@@ -332,26 +348,62 @@ IMPORTANT:
         raise RuntimeError(f"Failed to analyze and score: {str(e)}")
 
 
-def verify_argument(title: str, content: str) -> ValidityVerdict:
+def verify_argument(title: str, content: str, debate_question: str) -> ValidityVerdict:
     """
     Main pipeline function that chains all 3 steps together.
     
     Args:
         title: Argument title
         content: Argument content
+        debate_question: The debate topic/question this argument is responding to
     
     Returns:
         ValidityVerdict with fact-checking results
     """
     try:
         # Step 1: Extract core claim
-        claim = extract_core_claim(title, content)
+        claim = extract_core_claim(title, content, debate_question)
+        
+        # If no verifiable claims found, return low validity score
+        if claim.upper() == "NO VERIFIABLE FACTUAL CLAIMS" or not claim.strip():
+            return ValidityVerdict(
+                validity_score=1,
+                reasoning=f"This argument contains no verifiable factual claims related to the debate topic: '{debate_question}'. It consists only of opinions, rhetoric, or emotional statements that cannot be fact-checked.",
+                key_urls=[],
+                source_count=0
+            )
         
         # Step 2: Search for evidence
-        search_results = search_for_evidence(claim)
+        all_search_results = search_for_evidence(claim)
         
-        # Step 3: Analyze and score
-        verdict = analyze_and_score(claim, search_results)
+        # Filter for high-quality sources only (score > 0.5)
+        filtered_results = [
+            r for r in all_search_results 
+            if r.get('score', 0) > 0.5
+        ]
+        
+        # Sort by score (highest first) and take top 3
+        filtered_results.sort(key=lambda x: x.get('score', 0), reverse=True)
+        top_sources = filtered_results[:3]
+        
+        # If no sources pass the threshold, return low validity score
+        if not top_sources:
+            return ValidityVerdict(
+                validity_score=1,
+                reasoning="No high-quality sources found (all sources had relevance score ≤ 0.5). The claim cannot be verified with credible evidence.",
+                key_urls=[],
+                source_count=len(all_search_results)
+            )
+        
+        # Step 3: Analyze and score using only filtered high-quality sources
+        verdict = analyze_and_score(claim, top_sources, debate_question)
+        
+        # Extract URLs from top sources for key_urls (only high-quality sources with score > 0.5)
+        key_urls = [source.get('url', '') for source in top_sources if source.get('url')]
+        verdict.key_urls = key_urls[:3]  # Ensure max 3 URLs
+        
+        # Update source_count to reflect total sources found (before filtering)
+        verdict.source_count = len(all_search_results)
         
         return verdict
         
