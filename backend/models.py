@@ -72,6 +72,14 @@ class SummaryResponse(BaseModel):
     consensus_view: str
     timeline_view: List[dict]
 
+class ArgumentMatch(BaseModel):
+    pro_id: int
+    con_id: int
+    reason: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
 # Fact-checking models
 class ValidityVerdictResponse(BaseModel):
     validity_score: int

@@ -243,3 +243,145 @@ def update_topic_analysis(topic_id: int, overall_summary: str, consensus_view: s
     conn.commit()
     conn.close()
 
+def migrate_add_validity_columns():
+    """Add validity-related columns to arguments table if they don't exist."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Check if columns exist by trying to query them
+    # SQLite doesn't support IF NOT EXISTS for ALTER TABLE ADD COLUMN in older versions,
+    # so we'll use a try-except approach or check pragma table_info
+    try:
+        # Try to get table info
+        cursor.execute("PRAGMA table_info(arguments)")
+        columns = [row[1] for row in cursor.fetchall()]
+        
+        # Add columns if they don't exist
+        if 'validity_score' not in columns:
+            cursor.execute("ALTER TABLE arguments ADD COLUMN validity_score INTEGER")
+        if 'validity_reasoning' not in columns:
+            cursor.execute("ALTER TABLE arguments ADD COLUMN validity_reasoning TEXT")
+        if 'validity_checked_at' not in columns:
+            cursor.execute("ALTER TABLE arguments ADD COLUMN validity_checked_at TIMESTAMP")
+        if 'key_urls' not in columns:
+            cursor.execute("ALTER TABLE arguments ADD COLUMN key_urls TEXT")
+        
+        conn.commit()
+    except Exception as e:
+        # If error occurs, rollback
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+def get_argument(argument_id: int) -> Optional[dict]:
+    """Get a single argument by ID."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM arguments WHERE id = ?", (argument_id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row:
+        arg = dict(row)
+        # Parse key_urls JSON if it exists
+        if arg.get('key_urls'):
+            try:
+                arg['key_urls'] = json.loads(arg['key_urls'])
+            except (json.JSONDecodeError, TypeError):
+                arg['key_urls'] = []
+        else:
+            arg['key_urls'] = []
+        return arg
+    return None
+
+def update_argument_validity(argument_id: int, validity_score: int, validity_reasoning: str, key_urls: Optional[List[str]] = None):
+    """Update argument validity fields."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Convert key_urls list to JSON string
+    key_urls_json = json.dumps(key_urls) if key_urls else None
+    
+    cursor.execute(
+        """UPDATE arguments 
+           SET validity_score = ?, validity_reasoning = ?, validity_checked_at = ?, key_urls = ?
+           WHERE id = ?""",
+        (validity_score, validity_reasoning, datetime.utcnow().isoformat(), key_urls_json, argument_id)
+    )
+    conn.commit()
+    conn.close()
+
+def get_arguments_sorted_by_validity(topic_id: int, side: Optional[str] = None) -> list:
+    """Get arguments sorted by validity score (highest first, unverified at end)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    if side and side in ['pro', 'con']:
+        cursor.execute("""
+            SELECT * FROM arguments 
+            WHERE topic_id = ? AND side = ?
+            ORDER BY 
+                CASE WHEN validity_score IS NULL THEN 1 ELSE 0 END,
+                validity_score DESC,
+                created_at DESC
+        """, (topic_id, side))
+    else:
+        cursor.execute("""
+            SELECT * FROM arguments 
+            WHERE topic_id = ?
+            ORDER BY 
+                CASE WHEN validity_score IS NULL THEN 1 ELSE 0 END,
+                validity_score DESC,
+                created_at DESC
+        """, (topic_id,))
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    arguments = [dict(row) for row in rows]
+    # Parse key_urls JSON for each argument
+    for arg in arguments:
+        if arg.get('key_urls'):
+            try:
+                arg['key_urls'] = json.loads(arg['key_urls'])
+            except (json.JSONDecodeError, TypeError):
+                arg['key_urls'] = []
+        else:
+            arg['key_urls'] = []
+    
+    return arguments
+
+def get_argument_matches(topic_id: int) -> list:
+    """Get persisted argument matches for a topic."""
+    ensure_argument_matches_table()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT pro_id, con_id, reason FROM argument_matches WHERE topic_id = ?",
+        (topic_id,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def save_argument_matches(topic_id: int, matches: list):
+    """Save argument matches to database."""
+    ensure_argument_matches_table()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Clear existing matches for this topic
+    cursor.execute("DELETE FROM argument_matches WHERE topic_id = ?", (topic_id,))
+    
+    # Insert new matches
+    for match in matches:
+        cursor.execute(
+            """INSERT INTO argument_matches (topic_id, pro_id, con_id, reason)
+               VALUES (?, ?, ?, ?)""",
+            (topic_id, match['pro_id'], match['con_id'], match.get('reason'))
+        )
+    
+    conn.commit()
+    conn.close()
+
