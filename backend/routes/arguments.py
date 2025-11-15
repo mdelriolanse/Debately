@@ -18,22 +18,10 @@ async def create_argument(topic_id: int, argument: ArgumentCreate):
         raise HTTPException(status_code=400, detail="side must be either 'pro' or 'con'")
     
     # Validation: Topic must have at least 1 pro AND 1 con total
-    # Allow first argument of either side, but after that require both sides
-    counts = database.get_argument_counts(topic_id)
-    
-    # If topic has one side but not the other, only allow arguments from the missing side
-    if counts['pro_count'] == 0 and counts['con_count'] > 0:
-        if argument.side != 'pro':
-            raise HTTPException(
-                status_code=400,
-                detail="Topic must have at least 1 pro argument AND 1 con argument. Please add a pro argument first."
-            )
-    elif counts['con_count'] == 0 and counts['pro_count'] > 0:
-        if argument.side != 'con':
-            raise HTTPException(
-                status_code=400,
-                detail="Topic must have at least 1 pro argument AND 1 con argument. Please add a con argument first."
-            )
+    # Previous behavior required adding the missing opposite-side argument before allowing
+    # additional arguments on the same side. We now allow creating multiple arguments
+    # on the same side even when the other side is empty. This lets topics start with
+    # a single pro OR con and grow naturally.
     
     try:
         argument_id = database.create_argument(
@@ -47,6 +35,29 @@ async def create_argument(topic_id: int, argument: ArgumentCreate):
         return ArgumentCreateResponse(argument_id=argument_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create argument: {str(e)}")
+
+
+@router.put("/{argument_id}")
+async def update_argument(topic_id: int, argument_id: int, argument: ArgumentCreate):
+    """Update an existing argument. Clearing persisted matches for the topic so they will be re-evaluated."""
+    # Validate topic exists
+    topic = database.get_topic(topic_id)
+    if not topic:
+        raise HTTPException(status_code=404, detail=f"Topic with id {topic_id} not found")
+
+    # Validate argument exists
+    args = database.get_arguments(topic_id)
+    arg_exists = any(a['id'] == argument_id for a in args)
+    if not arg_exists:
+        raise HTTPException(status_code=404, detail=f"Argument with id {argument_id} not found in topic {topic_id}")
+
+    try:
+        database.update_argument(argument_id, argument.title, argument.content, argument.sources)
+        # Clear persisted matches for this topic so they will be recomputed on next request
+        database.delete_argument_matches_for_topic(topic_id)
+        return {"status": "ok"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update argument: {str(e)}")
 
 @router.get("", response_model=list[ArgumentResponse])
 async def get_arguments(

@@ -47,6 +47,24 @@ def init_db():
     conn.commit()
     conn.close()
 
+def ensure_argument_matches_table():
+    """Ensure the argument_matches table exists (safe to call repeatedly)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS argument_matches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            topic_id INTEGER NOT NULL,
+            pro_id INTEGER NOT NULL,
+            con_id INTEGER NOT NULL,
+            reason TEXT,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE CASCADE
+        )
+    """)
+    conn.commit()
+    conn.close()
+
 def get_topic(topic_id: int) -> Optional[dict]:
     """Get a topic by ID."""
     conn = get_db_connection()
@@ -179,6 +197,19 @@ def get_arguments(topic_id: int, side: Optional[str] = None) -> list:
             (topic_id,)
         )
     
+    # Create argument_matches table to persist pro/con links
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS argument_matches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            topic_id INTEGER NOT NULL,
+            pro_id INTEGER NOT NULL,
+            con_id INTEGER NOT NULL,
+            reason TEXT,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE CASCADE
+        )
+    """)
+    
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
@@ -212,98 +243,3 @@ def update_topic_analysis(topic_id: int, overall_summary: str, consensus_view: s
     conn.commit()
     conn.close()
 
-def migrate_add_validity_columns():
-    """Add validity columns to arguments table if they don't exist."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    # Check if columns exist by trying to add them (SQLite doesn't have IF NOT EXISTS for ALTER TABLE)
-    try:
-        cursor.execute("""
-            ALTER TABLE arguments 
-            ADD COLUMN validity_score INTEGER
-        """)
-    except sqlite3.OperationalError:
-        pass  # Column already exists
-    
-    try:
-        cursor.execute("""
-            ALTER TABLE arguments 
-            ADD COLUMN validity_reasoning TEXT
-        """)
-    except sqlite3.OperationalError:
-        pass  # Column already exists
-    
-    try:
-        cursor.execute("""
-            ALTER TABLE arguments 
-            ADD COLUMN validity_checked_at TIMESTAMP
-        """)
-    except sqlite3.OperationalError:
-        pass  # Column already exists
-    
-    try:
-        cursor.execute("""
-            ALTER TABLE arguments 
-            ADD COLUMN key_urls TEXT
-        """)
-    except sqlite3.OperationalError:
-        pass  # Column already exists
-    
-    conn.commit()
-    conn.close()
-
-def update_argument_validity(argument_id: int, validity_score: int, validity_reasoning: str, key_urls: Optional[List[str]] = None):
-    """Update argument with validity check results."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    # Store key_urls as JSON string
-    key_urls_json = json.dumps(key_urls) if key_urls else None
-    cursor.execute(
-        """UPDATE arguments 
-           SET validity_score = ?, validity_reasoning = ?, validity_checked_at = ?, key_urls = ?
-           WHERE id = ?""",
-        (validity_score, validity_reasoning, datetime.utcnow().isoformat(), key_urls_json, argument_id)
-    )
-    conn.commit()
-    conn.close()
-
-def get_argument(argument_id: int) -> Optional[dict]:
-    """Get a single argument by ID."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM arguments WHERE id = ?", (argument_id,))
-    row = cursor.fetchone()
-    conn.close()
-    
-    if row:
-        return dict(row)
-    return None
-
-def get_arguments_sorted_by_validity(topic_id: int, side: Optional[str] = None) -> list:
-    """Get arguments sorted by validity score (highest first, unverified at end)."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    if side and side in ['pro', 'con']:
-        cursor.execute("""
-            SELECT * FROM arguments 
-            WHERE topic_id = ? AND side = ?
-            ORDER BY 
-                CASE WHEN validity_score IS NULL THEN 1 ELSE 0 END,
-                validity_score DESC,
-                created_at ASC
-        """, (topic_id, side))
-    else:
-        cursor.execute("""
-            SELECT * FROM arguments 
-            WHERE topic_id = ?
-            ORDER BY 
-                CASE WHEN validity_score IS NULL THEN 1 ELSE 0 END,
-                validity_score DESC,
-                created_at ASC
-        """, (topic_id,))
-    
-    rows = cursor.fetchall()
-    conn.close()
-    return [dict(row) for row in rows]

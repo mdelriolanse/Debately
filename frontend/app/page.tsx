@@ -14,7 +14,8 @@ import {
   verifyArgument,
   type TopicListItem,
   type TopicDetailResponse,
-  type ArgumentCreate
+  type ArgumentCreate,
+  type ArgumentMatch
 } from '@/src/api'
 
 export default function Home() {
@@ -22,6 +23,9 @@ export default function Home() {
   const [topics, setTopics] = useState<TopicListItem[]>([])
   const [selectedTopic, setSelectedTopic] = useState<TopicDetailResponse | null>(null)
   const [selectedTopicId, setSelectedTopicId] = useState<number | null>(null)
+  const [argMatches, setArgMatches] = useState<ArgumentMatch[]>([])
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const [lines, setLines] = useState<Array<{ x1: number; y1: number; x2: number; y2: number; reason?: string | null }>>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [newDebateForm, setNewDebateForm] = useState({
@@ -93,6 +97,47 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTopicId])
 
+  // Fetch argument matches (pro <-> con) evaluated by Claude
+  useEffect(() => {
+    if (!selectedTopicId) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const matches = await getArgumentMatches(selectedTopicId)
+        if (!cancelled) setArgMatches(matches)
+      } catch (err) {
+        console.error('Failed to fetch argument matches:', err)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [selectedTopicId])
+
+  // Compute SVG line coordinates for matches
+  useEffect(() => {
+    if (!containerRef.current) return
+
+    const computeLines = () => {
+      const containerRect = containerRef.current!.getBoundingClientRect()
+      const newLines = argMatches.map((m) => {
+        const proEl = document.getElementById(`pro-arg-${m.pro_id}`)
+        const conEl = document.getElementById(`con-arg-${m.con_id}`)
+        if (!proEl || !conEl) return null
+        const pRect = proEl.getBoundingClientRect()
+        const cRect = conEl.getBoundingClientRect()
+        const x1 = pRect.right - containerRect.left
+        const y1 = pRect.top + pRect.height / 2 - containerRect.top
+        const x2 = cRect.left - containerRect.left
+        const y2 = cRect.top + cRect.height / 2 - containerRect.top
+        return { x1, y1, x2, y2, reason: m.reason }
+      }).filter(Boolean) as Array<{ x1: number; y1: number; x2: number; y2: number; reason?: string | null }>
+      setLines(newLines)
+    }
+
+    computeLines()
+    window.addEventListener('resize', computeLines)
+    return () => window.removeEventListener('resize', computeLines)
+  }, [argMatches, selectedTopic])
+
   const handleStartDebate = () => {
     setView('createDebate')
     setError(null)
@@ -157,9 +202,10 @@ export default function Home() {
     setError(null)
 
     try {
-      // Validate that we have at least one pro and one con argument
-      if (newDebateForm.proArgs.length === 0 || newDebateForm.conArgs.length === 0) {
-        throw new Error('Please provide at least one pro argument and one con argument')
+      // Validate that we have at least one argument total (either pro or con)
+      if ((newDebateForm.proArgs.length === 0 || newDebateForm.proArgs.every(a => !a.title.trim() && !a.content.trim()))
+          && (newDebateForm.conArgs.length === 0 || newDebateForm.conArgs.every(a => !a.title.trim() && !a.content.trim()))) {
+        throw new Error('Please provide at least one pro or con argument')
       }
 
       // Create the topic
@@ -350,7 +396,6 @@ export default function Home() {
                         )}
                       </div>
                       <Input
-                        required
                         value={arg.title}
                         onChange={(e) => {
                           const newProArgs = [...newDebateForm.proArgs]
@@ -361,7 +406,6 @@ export default function Home() {
                         className="bg-black/50 border-green-800/30 text-white mb-3"
                       />
                       <Textarea
-                        required
                         value={arg.content}
                         onChange={(e) => {
                           const newProArgs = [...newDebateForm.proArgs]
@@ -423,7 +467,6 @@ export default function Home() {
                         )}
                       </div>
                       <Input
-                        required
                         value={arg.title}
                         onChange={(e) => {
                           const newConArgs = [...newDebateForm.conArgs]
@@ -434,7 +477,6 @@ export default function Home() {
                         className="bg-black/50 border-rose-800/30 text-white mb-3"
                       />
                       <Textarea
-                        required
                         value={arg.content}
                         onChange={(e) => {
                           const newConArgs = [...newDebateForm.conArgs]
@@ -638,7 +680,18 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-6 mb-8">
+          <div ref={containerRef} className="relative grid md:grid-cols-2 gap-6 mb-8">
+            {/* SVG overlay for argument links */}
+            <svg className="absolute inset-0 w-full h-full pointer-events-none" xmlns="http://www.w3.org/2000/svg">
+              {lines.map((l, i) => (
+                  <g key={i}>
+                    <line x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="rgba(128,0,128,0.7)" strokeWidth={4} strokeLinecap="round" />
+                    {/* larger dot at each end */}
+                    <circle cx={l.x1} cy={l.y1} r={4} fill="rgba(128,0,128,0.95)" />
+                    <circle cx={l.x2} cy={l.y2} r={4} fill="rgba(128,0,128,0.95)" />
+                  </g>
+                ))}
+            </svg>
             {/* Pro Column */}
             <div className="space-y-4">
               <div className="flex items-center justify-between mb-4">
@@ -704,7 +757,7 @@ export default function Home() {
               
               {selectedTopic.pro_arguments.length === 0 ? (
                 <Card className="bg-[#0f1f0f] border-green-900/30 p-6 text-center">
-                  <p className="text-gray-500 text-sm">No pro arguments yet</p>
+                  <p className="text-gray-500 text-sm">Nothing here yet, add to the debate!</p>
                 </Card>
               ) : (
                 selectedTopic.pro_arguments.map((arg) => {
@@ -866,7 +919,7 @@ export default function Home() {
               
               {selectedTopic.con_arguments.length === 0 ? (
                 <Card className="bg-[#1f0f0f] border-rose-900/30 p-6 text-center">
-                  <p className="text-gray-500 text-sm">No con arguments yet</p>
+                  <p className="text-gray-500 text-sm">Nothing here yet, add to the debate!</p>
                 </Card>
               ) : (
                 selectedTopic.con_arguments.map((arg) => {
