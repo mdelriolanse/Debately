@@ -4,31 +4,33 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Users, Brain, Scale, Sparkles, ArrowLeft, Plus, X, Loader2, CheckCircle2, Star, ArrowUp, ArrowDown } from 'lucide-react'
+import { ShaderBackground } from '@/components/ShaderBackground'
+import { Users, Brain, Scale, Sparkles, ArrowLeft, Plus, X, Loader2, Star, ArrowUp, ArrowDown, MessageSquare, Send, Search } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
+import { motion } from 'framer-motion'
 import { 
   getTopics, 
   createTopic, 
   getTopic, 
   createArgument, 
-  verifyArgument,
-  getArgumentMatches,
   upvoteArgument,
   downvoteArgument,
+  commentOnArgument,
+  getComments,
   type TopicListItem,
   type TopicDetailResponse,
   type ArgumentCreate,
-  type ArgumentMatch
+  type CommentCreate,
+  type CommentResponse
 } from '@/src/api'
 
 export default function Home() {
   const [view, setView] = useState<'landing' | 'browse' | 'topic' | 'createDebate'>('landing')
   const [topics, setTopics] = useState<TopicListItem[]>([])
+  const [searchQuery, setSearchQuery] = useState<string>('')
   const [selectedTopic, setSelectedTopic] = useState<TopicDetailResponse | null>(null)
   const [selectedTopicId, setSelectedTopicId] = useState<number | null>(null)
-  const [argMatches, setArgMatches] = useState<ArgumentMatch[]>([])
   const containerRef = useRef<HTMLDivElement | null>(null)
-  const [lines, setLines] = useState<Array<{ x1: number; y1: number; x2: number; y2: number; reason?: string | null }>>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [rejectionError, setRejectionError] = useState<{ message: string; reasoning: string } | null>(null)
@@ -45,8 +47,12 @@ export default function Home() {
     sources: '',
     side: 'pro'
   })
-  const [verifyingArgumentId, setVerifyingArgumentId] = useState<number | null>(null)
   const [votingArgumentId, setVotingArgumentId] = useState<number | null>(null)
+  const [expandedComments, setExpandedComments] = useState<Set<number>>(new Set())
+  const [commentTexts, setCommentTexts] = useState<Record<number, string>>({})
+  const [submittingCommentId, setSubmittingCommentId] = useState<number | null>(null)
+  const [comments, setComments] = useState<Record<number, CommentResponse[]>>({})
+  const [loadingComments, setLoadingComments] = useState<Set<number>>(new Set())
 
   // Helper function to extract domain from URL
   const getDomain = (url: string): string => {
@@ -102,46 +108,6 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTopicId])
 
-  // Fetch argument matches (pro <-> con) evaluated by Claude
-  useEffect(() => {
-    if (!selectedTopicId) return
-    let cancelled = false
-    ;(async () => {
-      try {
-        const matches = await getArgumentMatches(selectedTopicId)
-        if (!cancelled) setArgMatches(matches)
-      } catch (err) {
-        console.error('Failed to fetch argument matches:', err)
-      }
-    })()
-    return () => { cancelled = true }
-  }, [selectedTopicId])
-
-  // Compute SVG line coordinates for matches
-  useEffect(() => {
-    if (!containerRef.current) return
-
-    const computeLines = () => {
-      const containerRect = containerRef.current!.getBoundingClientRect()
-      const newLines = argMatches.map((m) => {
-        const proEl = document.getElementById(`pro-arg-${m.pro_id}`)
-        const conEl = document.getElementById(`con-arg-${m.con_id}`)
-        if (!proEl || !conEl) return null
-        const pRect = proEl.getBoundingClientRect()
-        const cRect = conEl.getBoundingClientRect()
-        const x1 = pRect.right - containerRect.left
-        const y1 = pRect.top + pRect.height / 2 - containerRect.top
-        const x2 = cRect.left - containerRect.left
-        const y2 = cRect.top + cRect.height / 2 - containerRect.top
-        return { x1, y1, x2, y2, reason: m.reason }
-      }).filter(Boolean) as Array<{ x1: number; y1: number; x2: number; y2: number; reason?: string | null }>
-      setLines(newLines)
-    }
-
-    computeLines()
-    window.addEventListener('resize', computeLines)
-    return () => window.removeEventListener('resize', computeLines)
-  }, [argMatches, selectedTopic])
 
   const handleStartDebate = () => {
     setView('createDebate')
@@ -151,6 +117,7 @@ export default function Home() {
   const handleBrowseTopics = () => {
     setView('browse')
     setError(null)
+    setSearchQuery('')
   }
 
   const handleSelectTopic = (topic: TopicListItem) => {
@@ -171,6 +138,7 @@ export default function Home() {
     setSelectedTopic(null)
     setSelectedTopicId(null)
     setError(null)
+    setSearchQuery('')
   }
 
   const handleAddProArg = () => {
@@ -317,24 +285,6 @@ export default function Home() {
     }
   }
 
-  const handleVerifyArgument = async (argumentId: number) => {
-    setVerifyingArgumentId(argumentId)
-    setError(null)
-
-    try {
-      await verifyArgument(argumentId)
-      // Refetch topic to get updated validity scores
-      if (selectedTopicId) {
-        await fetchTopicDetails(selectedTopicId)
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to verify argument')
-      console.error('Error verifying argument:', err)
-    } finally {
-      setVerifyingArgumentId(null)
-    }
-  }
-
   const handleVote = async (argumentId: number, voteType: 'upvote' | 'downvote') => {
     if (votingArgumentId === argumentId) return // Prevent double-clicking
     
@@ -387,16 +337,85 @@ export default function Home() {
     }
   }
 
+  const handleToggleComments = async (argumentId: number) => {
+    setExpandedComments(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(argumentId)) {
+        newSet.delete(argumentId)
+      } else {
+        newSet.add(argumentId)
+        // Fetch comments when expanding
+        if (!comments[argumentId]) {
+          fetchCommentsForArgument(argumentId)
+        }
+      }
+      return newSet
+    })
+  }
+
+  const fetchCommentsForArgument = async (argumentId: number) => {
+    setLoadingComments(prev => new Set(prev).add(argumentId))
+    setError(null)
+    try {
+      const fetchedComments = await getComments(argumentId)
+      setComments(prev => ({ ...prev, [argumentId]: fetchedComments }))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch comments')
+      console.error('Error fetching comments:', err)
+    } finally {
+      setLoadingComments(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(argumentId)
+        return newSet
+      })
+    }
+  }
+
+  const handleSubmitComment = async (argumentId: number) => {
+    const commentText = commentTexts[argumentId]?.trim()
+    if (!commentText) return
+
+    setSubmittingCommentId(argumentId)
+    setError(null)
+
+    try {
+      await commentOnArgument(argumentId, { comment: commentText })
+      // Clear the comment text
+      setCommentTexts(prev => {
+        const newTexts = { ...prev }
+        delete newTexts[argumentId]
+        return newTexts
+      })
+      // Refresh comments to show the new one
+      await fetchCommentsForArgument(argumentId)
+      // Keep the comment section open to show the new comment
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to post comment')
+      console.error('Error posting comment:', err)
+    } finally {
+      setSubmittingCommentId(null)
+    }
+  }
+
 
   if (view === 'createDebate') {
     return (
-      <div className="min-h-screen bg-black text-white">
-        <div className="fixed inset-0 bg-grid-pattern opacity-20 pointer-events-none" />
+      <div className="relative min-h-screen overflow-hidden text-text-primary">
+        <div className="fixed inset-0 bg-bg-primary -z-10" />
+        <div className="fixed inset-0" style={{ zIndex: 0 }}>
+          <ShaderBackground className="w-full h-full pointer-events-none" introDuration={2.5} />
+        </div>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 1, delay: 1.5, ease: "easeOut" }}
+          className="fixed inset-0 bg-gradient-to-b from-black/50 via-black/30 to-black/60 pointer-events-none"
+          style={{ zIndex: 1 }}
+        />
         
-        <div className="relative px-6 py-12 max-w-7xl mx-auto">
+        <div className="relative z-10 pt-32 pb-20 px-6 max-w-7xl mx-auto">
           <Button 
-            variant="ghost" 
-            className="text-gray-400 hover:text-white mb-8"
+            className="btn-primary mb-8"
             onClick={handleBackFromCreate}
             disabled={loading}
           >
@@ -404,20 +423,31 @@ export default function Home() {
             Back to Home
           </Button>
 
-          <div className="mb-12">
-            <h1 className="text-4xl md:text-5xl font-bold mb-4">Create New Debate</h1>
-            <p className="text-xl text-gray-400">Start a structured discussion on any topic</p>
-          </div>
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1, ease: [0.16, 1, 0.3, 1], delay: 2 }}
+            className="mb-12"
+          >
+            <h1 className="text-[clamp(2rem,4vw,3.5rem)] font-light leading-tight tracking-[-0.04em] mb-4">Create New Debate</h1>
+            <p className="text-text-secondary text-lg">Start a structured discussion on any topic</p>
+          </motion.div>
 
           {error && (
-            <Card className="bg-red-950/30 border-red-500/30 p-4 mb-6">
-              <p className="text-red-400">{error}</p>
+            <Card className="glass-panel border-accent-error/30 bg-accent-error/10 p-4 mb-6">
+              <p className="text-accent-error">{error}</p>
             </Card>
           )}
 
-          <form onSubmit={handleSubmitDebate} className="space-y-8">
+          <motion.form
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1, ease: [0.16, 1, 0.3, 1], delay: 2.3 }}
+            onSubmit={handleSubmitDebate}
+            className="space-y-8"
+          >
             {/* Topic Title */}
-            <Card className="bg-[#1a1a1a] border-[#2a2a2a] p-8">
+            <Card className="glass-panel p-8">
               <label className="block mb-3 text-lg font-semibold">Debate Topic</label>
               <Input
                 required
@@ -426,7 +456,7 @@ export default function Home() {
                 placeholder="e.g., Should remote work be the default?"
                 className="bg-black border-gray-700 text-white text-lg py-6"
               />
-              <p className="text-sm text-gray-500 mt-2">Frame as a clear question that has multiple valid perspectives</p>
+              <p className="text-sm text-text-tertiary mt-2">Frame as a clear question that has multiple valid perspectives</p>
             </Card>
 
             <div className="grid md:grid-cols-2 gap-6">
@@ -451,7 +481,7 @@ export default function Home() {
 
                 <div className="space-y-4">
                   {newDebateForm.proArgs.map((arg, index) => (
-                    <Card key={index} className="bg-[#0f1f0f] border-green-900/30 p-6">
+                    <Card key={index} className="glass-panel p-6">
                       <div className="flex justify-between items-start mb-3">
                         <label className="text-sm font-medium text-green-400">Argument {index + 1}</label>
                         {newDebateForm.proArgs.length > 1 && (
@@ -460,7 +490,7 @@ export default function Home() {
                             variant="ghost"
                             size="sm"
                             onClick={() => handleRemoveProArg(index)}
-                            className="text-gray-500 hover:text-red-400 h-auto p-1"
+                            className="text-text-tertiary hover:text-accent-error h-auto p-1"
                           >
                             <X className="w-4 h-4" />
                           </Button>
@@ -474,7 +504,7 @@ export default function Home() {
                           setNewDebateForm(prev => ({ ...prev, proArgs: newProArgs }))
                         }}
                         placeholder="Argument title..."
-                        className="bg-black/50 border-green-800/30 text-white mb-3"
+                        className="mb-3"
                       />
                       <Textarea
                         value={arg.content}
@@ -522,7 +552,7 @@ export default function Home() {
 
                 <div className="space-y-4">
                   {newDebateForm.conArgs.map((arg, index) => (
-                    <Card key={index} className="bg-[#1f0f0f] border-rose-900/30 p-6">
+                    <Card key={index} className="glass-panel p-6">
                       <div className="flex justify-between items-start mb-3">
                         <label className="text-sm font-medium text-rose-400">Argument {index + 1}</label>
                         {newDebateForm.conArgs.length > 1 && (
@@ -531,7 +561,7 @@ export default function Home() {
                             variant="ghost"
                             size="sm"
                             onClick={() => handleRemoveConArg(index)}
-                            className="text-gray-500 hover:text-red-400 h-auto p-1"
+                            className="text-text-tertiary hover:text-accent-error h-auto p-1"
                           >
                             <X className="w-4 h-4" />
                           </Button>
@@ -545,7 +575,7 @@ export default function Home() {
                           setNewDebateForm(prev => ({ ...prev, conArgs: newConArgs }))
                         }}
                         placeholder="Argument title..."
-                        className="bg-black/50 border-rose-800/30 text-white mb-3"
+                        className="mb-3"
                       />
                       <Textarea
                         value={arg.content}
@@ -579,14 +609,14 @@ export default function Home() {
                 type="button"
                 variant="outline" 
                 onClick={handleBackFromCreate}
-                className="border-gray-700 hover:bg-gray-900 text-white px-8 py-6"
+                className="px-8 py-6"
               >
                 Cancel
               </Button>
               <Button 
                 type="submit"
                 disabled={loading}
-                className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white border-0 px-8 py-6 disabled:opacity-50"
+                className="btn-primary px-8 py-6 disabled:opacity-50"
               >
                 {loading ? (
                   <>
@@ -598,7 +628,7 @@ export default function Home() {
                 )}
               </Button>
             </div>
-          </form>
+          </motion.form>
         </div>
       </div>
     )
@@ -606,13 +636,22 @@ export default function Home() {
 
   if (view === 'browse') {
     return (
-      <div className="min-h-screen bg-black text-white">
-        <div className="fixed inset-0 bg-grid-pattern opacity-20 pointer-events-none" />
+      <div className="relative min-h-screen overflow-hidden text-text-primary">
+        <div className="fixed inset-0 bg-bg-primary -z-10" />
+        <div className="fixed inset-0" style={{ zIndex: 0 }}>
+          <ShaderBackground className="w-full h-full pointer-events-none" introDuration={2.5} />
+        </div>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 1, delay: 1.5, ease: "easeOut" }}
+          className="fixed inset-0 bg-gradient-to-b from-black/50 via-black/30 to-black/60 pointer-events-none"
+          style={{ zIndex: 1 }}
+        />
         
-        <div className="relative px-6 py-12 max-w-7xl mx-auto">
+        <div className="relative z-10 pt-32 pb-20 px-6 max-w-7xl mx-auto">
           <Button 
-            variant="ghost" 
-            className="text-gray-400 hover:text-white mb-8"
+            className="btn-primary mb-8"
             onClick={handleBackToLanding}
             disabled={loading}
           >
@@ -620,49 +659,110 @@ export default function Home() {
             Back to Home
           </Button>
 
-          <div className="flex justify-between items-center mb-12">
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1, ease: [0.16, 1, 0.3, 1], delay: 2 }}
+            className="flex justify-between items-center mb-12"
+          >
             <div>
-              <h1 className="text-4xl md:text-5xl font-bold mb-4">Browse Topics</h1>
-              <p className="text-xl text-gray-400">Explore ongoing debates and contribute your perspective</p>
+              <h1 className="text-[clamp(2rem,4vw,3.5rem)] font-light leading-tight tracking-[-0.04em] mb-4">Browse Topics</h1>
+              <p className="text-text-secondary text-lg">Explore ongoing debates and contribute your perspective</p>
             </div>
             <Button 
               onClick={handleStartDebate}
-              className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white border-0"
+              className="btn-primary"
             >
               <Plus className="w-4 h-4 mr-2" />
               New Topic
             </Button>
-          </div>
+          </motion.div>
 
           {error && (
-            <Card className="bg-red-950/30 border-red-500/30 p-4 mb-6">
-              <p className="text-red-400">{error}</p>
+            <Card className="glass-panel border-accent-error/30 bg-accent-error/10 p-4 mb-6">
+              <p className="text-accent-error">{error}</p>
             </Card>
           )}
 
+          {/* Search Input */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1], delay: 2.2 }}
+            className="mb-8"
+          >
+            <div className="relative">
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-text-tertiary pointer-events-none z-10" />
+              <Input
+                type="text"
+                placeholder="Search topics..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-12 py-6 text-lg bg-black/50 border-white/20 focus-visible:ring-white/30 relative z-0"
+              />
+            </div>
+          </motion.div>
+
           {loading ? (
             <div className="flex items-center justify-center py-20">
-              <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
+              <Loader2 className="w-8 h-8 animate-spin text-white" />
             </div>
-          ) : topics.length === 0 ? (
-            <Card className="bg-[#1a1a1a] border-[#2a2a2a] p-12 text-center">
-              <p className="text-gray-400 text-lg mb-4">No topics yet. Be the first to start a debate!</p>
-              <Button 
-                onClick={handleStartDebate}
-                className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white border-0"
+          ) : (() => {
+            // Filter topics based on search query
+            const filteredTopics = searchQuery.trim() === '' 
+              ? topics 
+              : topics.filter(topic => 
+                  topic.question.toLowerCase().includes(searchQuery.toLowerCase())
+                )
+            
+            if (filteredTopics.length === 0) {
+              return (
+                <Card className="glass-panel p-12 text-center">
+                  {searchQuery.trim() === '' ? (
+                    <>
+                      <p className="text-text-secondary text-lg mb-4">No topics yet. Be the first to start a debate!</p>
+                      <Button 
+                        onClick={handleStartDebate}
+                        className="btn-primary"
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Create First Topic
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-text-secondary text-lg mb-4">No topics found matching "{searchQuery}"</p>
+                      <Button 
+                        onClick={() => setSearchQuery('')}
+                        variant="outline"
+                        className="mt-4"
+                      >
+                        Clear Search
+                      </Button>
+                    </>
+                  )}
+                </Card>
+              )
+            }
+
+            return (
+              <motion.div
+                initial={{ opacity: 0, y: 40 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 1, ease: [0.16, 1, 0.3, 1], delay: 2.3 }}
+                className="space-y-6"
               >
-                <Plus className="w-4 h-4 mr-2" />
-                Create First Topic
-              </Button>
-            </Card>
-          ) : (
-            <div className="space-y-6">
-              {topics.map((topic) => (
-                <Card 
+                {filteredTopics.map((topic, index) => (
+                <motion.div
                   key={topic.id}
-                  className="bg-[#1a1a1a] border-[#2a2a2a] p-8 hover:bg-[#1f1f1f] transition-all duration-300 cursor-pointer hover:border-purple-500/30"
-                  onClick={() => handleSelectTopic(topic)}
+                  initial={{ opacity: 0, y: 30 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.8, delay: 2.4 + 0.1 * index, ease: [0.16, 1, 0.3, 1] }}
                 >
+                  <Card 
+                    className="card card-hover p-8 cursor-pointer"
+                    onClick={() => handleSelectTopic(topic)}
+                  >
                   <h3 className="text-2xl font-semibold mb-4">{topic.question}</h3>
                   <div className="space-y-3">
                     {/* Argument counts - always show */}
@@ -691,7 +791,7 @@ export default function Home() {
                     {/* Validity scores - show if available */}
                     {(topic.pro_avg_validity !== null && topic.pro_avg_validity !== undefined) || 
                      (topic.con_avg_validity !== null && topic.con_avg_validity !== undefined) ? (
-                      <div className="flex gap-6 text-xs text-gray-400">
+                      <div className="flex gap-6 text-xs text-text-tertiary">
                         {topic.pro_avg_validity !== null && topic.pro_avg_validity !== undefined && (
                           <span className="flex items-center gap-1.5">
                             <span className="text-green-400">PRO:</span>
@@ -707,7 +807,7 @@ export default function Home() {
                                 />
                               ))}
                             </div>
-                            <span className="text-gray-500">({topic.pro_avg_validity})</span>
+                            <span className="text-text-tertiary">({topic.pro_avg_validity})</span>
                           </span>
                         )}
                         {topic.con_avg_validity !== null && topic.con_avg_validity !== undefined && (
@@ -725,13 +825,13 @@ export default function Home() {
                                 />
                               ))}
                             </div>
-                            <span className="text-gray-500">({topic.con_avg_validity})</span>
+                            <span className="text-text-tertiary">({topic.con_avg_validity})</span>
                           </span>
                         )}
                       </div>
                     ) : (
                       topic.pro_count > 0 && topic.con_count > 0 && (
-                        <span className="flex items-center gap-2 text-xs text-gray-500">
+                        <span className="flex items-center gap-2 text-xs text-text-tertiary">
                           <Brain className="w-3 h-3 text-purple-400" />
                           Not verified yet
                         </span>
@@ -739,9 +839,11 @@ export default function Home() {
                     )}
                   </div>
                 </Card>
-              ))}
-            </div>
-          )}
+                </motion.div>
+                ))}
+              </motion.div>
+            )
+          })()}
         </div>
       </div>
     )
@@ -750,28 +852,33 @@ export default function Home() {
   if (view === 'topic') {
     if (loading && !selectedTopic) {
       return (
-        <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center gap-4">
+        <div className="relative min-h-screen overflow-hidden text-text-primary flex flex-col items-center justify-center gap-4">
+          <div className="fixed inset-0 bg-bg-primary -z-10" />
+          <div className="fixed inset-0" style={{ zIndex: 0 }}>
+            <ShaderBackground className="w-full h-full pointer-events-none" introDuration={2.5} />
+          </div>
           <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
-          <p className="text-gray-400 text-lg">Verifying arguments and generating analysis...</p>
-          <p className="text-gray-500 text-sm">This may take 30-60 seconds on first load</p>
+          <p className="text-text-secondary text-lg">Verifying arguments and generating analysis...</p>
+          <p className="text-text-tertiary text-sm">This may take 30-60 seconds on first load</p>
         </div>
       )
     }
 
     if (!selectedTopic) {
       return (
-        <div className="min-h-screen bg-black text-white">
-          <div className="relative px-6 py-12 max-w-7xl mx-auto">
+        <div className="relative min-h-screen overflow-hidden text-text-primary">
+          <div className="fixed inset-0 bg-bg-primary -z-10" />
+          <div className="relative z-10 pt-32 pb-20 px-6 max-w-7xl mx-auto">
             <Button 
               variant="ghost" 
-              className="text-gray-400 hover:text-white mb-8"
+              className="text-text-tertiary hover:text-white mb-8"
               onClick={handleBackToBrowse}
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to Topics
             </Button>
-            <Card className="bg-[#1a1a1a] border-[#2a2a2a] p-12 text-center">
-              <p className="text-gray-400 text-lg">Topic not found</p>
+            <Card className="glass-panel p-12 text-center">
+              <p className="text-text-secondary text-lg">Topic not found</p>
             </Card>
           </div>
         </div>
@@ -779,13 +886,23 @@ export default function Home() {
     }
 
     return (
-      <div className="min-h-screen bg-black text-white">
-        <div className="fixed inset-0 bg-grid-pattern opacity-20 pointer-events-none" />
+      <div className="relative min-h-screen overflow-hidden text-text-primary">
+        <div className="fixed inset-0 bg-bg-primary -z-10" />
+        <div className="fixed inset-0" style={{ zIndex: 0 }}>
+          <ShaderBackground className="w-full h-full pointer-events-none" introDuration={2.5} />
+        </div>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 1, delay: 1.5, ease: "easeOut" }}
+          className="fixed inset-0 bg-gradient-to-b from-black/50 via-black/30 to-black/60 pointer-events-none"
+          style={{ zIndex: 1 }}
+        />
         
-        <div className="relative px-6 py-12 max-w-7xl mx-auto">
+        <div className="relative z-10 pt-32 pb-20 px-6 max-w-7xl mx-auto">
           <Button 
             variant="ghost" 
-            className="text-gray-400 hover:text-white mb-8"
+            className="text-text-tertiary hover:text-white mb-8"
             onClick={handleBackToBrowse}
             disabled={loading}
           >
@@ -794,27 +911,27 @@ export default function Home() {
           </Button>
 
           {error && (
-            <Card className="bg-red-950/30 border-red-500/30 p-4 mb-6">
-              <p className="text-red-400">{error}</p>
+            <Card className="glass-panel border-accent-error/30 bg-accent-error/10 p-4 mb-6">
+              <p className="text-accent-error">{error}</p>
             </Card>
           )}
 
           {/* Rejection Error Modal */}
           {rejectionError && (
             <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-              <Card className="bg-[#1a1a1a] border-red-500/50 p-6 max-w-lg w-full">
+              <Card className="glass-panel border-accent-error/50 p-6 max-w-lg w-full">
                 <div className="flex items-start gap-4">
                   <div className="text-red-400 text-2xl">❌</div>
                   <div className="flex-1">
                     <h3 className="text-xl font-semibold text-red-400 mb-3">Argument Rejected</h3>
-                    <p className="text-gray-300 mb-3">{rejectionError.message}</p>
+                    <p className="text-text-secondary mb-3">{rejectionError.message}</p>
                     <div className="bg-black/30 border border-yellow-500/20 rounded p-3 mb-4">
                       <p className="text-xs text-yellow-300 font-semibold mb-1">Reasoning:</p>
-                      <p className="text-xs text-gray-400">{rejectionError.reasoning}</p>
+                      <p className="text-xs text-text-tertiary">{rejectionError.reasoning}</p>
                     </div>
                     {selectedTopic && (
-                      <p className="text-sm text-gray-500 mb-4">
-                        Please submit an argument with factual claims related to: <span className="text-gray-300 font-semibold">"{selectedTopic.question}"</span>
+                      <p className="text-sm text-text-tertiary mb-4">
+                        Please submit an argument with factual claims related to: <span className="text-text-secondary font-semibold">"{selectedTopic.question}"</span>
                       </p>
                     )}
                     <Button
@@ -829,28 +946,22 @@ export default function Home() {
             </div>
           )}
 
-          <div className="mb-12">
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1, ease: [0.16, 1, 0.3, 1], delay: 2 }}
+            className="mb-12"
+          >
             <div className="flex items-center gap-3 mb-4">
-              <span className="font-mono text-sm text-gray-500">TOPIC</span>
+              <span className="font-mono text-sm text-text-tertiary uppercase tracking-[0.3em]">Topic</span>
             </div>
             <div>
-              <h1 className="text-4xl md:text-5xl font-bold">{selectedTopic.question}</h1>
-              <p className="text-sm text-gray-500 mt-2">Arguments sorted by validity (highest quality first)</p>
+              <h1 className="text-[clamp(2rem,4vw,3.5rem)] font-light leading-tight tracking-[-0.04em]">{selectedTopic.question}</h1>
+              <p className="text-sm text-text-tertiary mt-2">Arguments sorted by validity (highest quality first)</p>
             </div>
-          </div>
+          </motion.div>
 
           <div ref={containerRef} className="relative grid md:grid-cols-2 gap-6 mb-8">
-            {/* SVG overlay for argument links */}
-            <svg className="absolute inset-0 w-full h-full pointer-events-none" xmlns="http://www.w3.org/2000/svg">
-              {lines.map((l, i) => (
-                  <g key={i}>
-                    <line x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="rgba(128,0,128,0.7)" strokeWidth={4} strokeLinecap="round" />
-                    {/* larger dot at each end */}
-                    <circle cx={l.x1} cy={l.y1} r={4} fill="rgba(128,0,128,0.95)" />
-                    <circle cx={l.x2} cy={l.y2} r={4} fill="rgba(128,0,128,0.95)" />
-                  </g>
-                ))}
-            </svg>
             {/* Pro Column */}
             <div className="space-y-4">
               <div className="flex items-center justify-between mb-4">
@@ -871,7 +982,7 @@ export default function Home() {
               </div>
 
               {showAddArgumentForm.side === 'pro' && (
-                <Card className="bg-[#0f1f0f] border-green-900/30 p-6">
+                <Card className="glass-panel p-6">
                   <Input
                     value={newArgument.title}
                     onChange={(e) => setNewArgument(prev => ({ ...prev, title: e.target.value }))}
@@ -915,8 +1026,8 @@ export default function Home() {
               )}
               
               {selectedTopic.pro_arguments.length === 0 ? (
-                <Card className="bg-[#0f1f0f] border-green-900/30 p-6 text-center">
-                  <p className="text-gray-500 text-sm">Nothing here yet, add to the debate!</p>
+                <Card className="glass-panel p-6 text-center">
+                  <p className="text-text-tertiary text-sm">Nothing here yet, add to the debate!</p>
                 </Card>
               ) : (
                 selectedTopic.pro_arguments.map((arg) => {
@@ -930,10 +1041,10 @@ export default function Home() {
                                        parseInt(String(arg.validity_score)) : null
                   
                   const voteCount = arg.votes || 0
-                  const voteColor = voteCount > 0 ? 'text-green-400' : voteCount < 0 ? 'text-red-400' : 'text-gray-500'
+                  const voteColor = voteCount > 0 ? 'text-green-400' : voteCount < 0 ? 'text-red-400' : 'text-text-tertiary'
                   
                   return (
-                  <Card key={arg.id} className="bg-[#0f1f0f] border-green-900/30 p-6 hover:border-green-500/50 transition-colors">
+                  <Card key={arg.id} className="card card-hover p-6">
                     {/* Voting UI */}
                     <div className="flex items-center gap-2 mb-3">
                       <div className="flex items-center gap-1 bg-black/30 rounded px-2 py-1 border border-gray-700/50">
@@ -987,24 +1098,24 @@ export default function Home() {
                         </div>
                       ) : null}
                     </div>
-                    <p className="text-gray-300 mb-3">{arg.content}</p>
+                    <p className="text-text-secondary mb-3">{arg.content}</p>
                     {arg.validity_reasoning && (
                       <div className="mb-3 p-3 bg-black/30 rounded border border-yellow-500/20">
                         <p className="text-xs text-yellow-300 font-semibold mb-1">Fact-Check:</p>
-                        <p className="text-xs text-gray-400">{arg.validity_reasoning}</p>
+                        <p className="text-xs text-text-tertiary">{arg.validity_reasoning}</p>
                       </div>
                     )}
                     {/* User-provided sources */}
                     {arg.sources && arg.sources.trim() !== '' && (
                       <div className="mt-3 pt-3 border-t border-gray-700/50">
-                        <p className="text-xs text-gray-400 mb-2 font-semibold">Provided by author:</p>
-                        <p className="text-xs text-gray-500 font-mono break-words">{arg.sources}</p>
+                        <p className="text-xs text-text-tertiary mb-2 font-semibold">Provided by author:</p>
+                        <p className="text-xs text-text-tertiary font-mono break-words">{arg.sources}</p>
                       </div>
                     )}
                     {/* Fact-checker sources */}
                     {arg.key_urls && arg.key_urls.length > 0 && (
                       <div className="mt-3 pt-3 border-t border-gray-700/50">
-                        <p className="text-xs text-yellow-400 mb-2 font-semibold">Verified using:</p>
+                        <p className="text-xs text-accent-warning mb-2 font-semibold">Verified using:</p>
                         <div className="flex flex-wrap gap-2">
                           {arg.key_urls.slice(0, 3).map((url, idx) => (
                             <a
@@ -1012,7 +1123,7 @@ export default function Home() {
                               href={url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-300 transition-colors"
+                              className="flex items-center gap-1.5 text-xs text-text-tertiary hover:text-text-secondary transition-colors"
                               title={url}
                             >
                               <img
@@ -1028,28 +1139,109 @@ export default function Home() {
                     )}
                     <div className="flex justify-between items-center mt-3">
                       <div className="flex gap-2">
-                        <span className="text-xs text-gray-500 font-mono">by {arg.author}</span>
+                        <span className="text-xs text-text-tertiary font-mono">by {arg.author}</span>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleVerifyArgument(arg.id)}
-                        disabled={verifyingArgumentId === arg.id}
-                        className="text-green-400 hover:text-green-300 hover:bg-green-950/30 h-auto py-1 text-xs"
-                      >
-                        {verifyingArgumentId === arg.id ? (
-                          <>
-                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                            Verifying...
-                          </>
-                        ) : (
-                          <>
-                            <CheckCircle2 className="w-3 h-3 mr-1" />
-                            Verify
-                          </>
-                        )}
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleToggleComments(arg.id)}
+                          className="btn-comment text-text-tertiary hover:text-text-secondary h-auto py-1 text-xs"
+                        >
+                          <MessageSquare className="w-3 h-3 mr-1" />
+                          Comment
+                        </Button>
+                      </div>
                     </div>
+                    
+                    {/* Comments Section */}
+                    {expandedComments.has(arg.id) && (
+                      <div className="mt-4 pt-4 border-t border-gray-700/50">
+                        <div className="space-y-4">
+                          {/* Existing Comments */}
+                          {loadingComments.has(arg.id) ? (
+                            <div className="flex items-center justify-center py-4">
+                              <Loader2 className="w-4 h-4 animate-spin text-text-tertiary" />
+                              <span className="ml-2 text-sm text-text-tertiary">Loading comments...</span>
+                            </div>
+                          ) : comments[arg.id] && comments[arg.id].length > 0 ? (
+                            <div className="space-y-3">
+                              <div className="flex items-center gap-2 mb-2">
+                                <MessageSquare className="w-4 h-4 text-text-tertiary" />
+                                <span className="text-sm font-semibold text-text-secondary">
+                                  Comments ({comments[arg.id].length})
+                                </span>
+                              </div>
+                              {comments[arg.id].map((comment) => (
+                                <div key={comment.id} className="bg-black/30 rounded-lg p-3 border border-gray-700/30">
+                                  <p className="text-sm text-text-secondary whitespace-pre-wrap">{comment.comment}</p>
+                                  <p className="text-xs text-text-tertiary mt-2">
+                                    {new Date(comment.created_at).toLocaleString()}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-sm text-text-tertiary text-center py-2">
+                              No comments yet. Be the first to comment!
+                            </div>
+                          )}
+                          
+                          {/* Add Comment Form */}
+                          <div className="space-y-3 pt-2 border-t border-gray-700/30">
+                            <div className="flex items-center gap-2 mb-2">
+                              <MessageSquare className="w-4 h-4 text-text-tertiary" />
+                              <span className="text-sm font-semibold text-text-secondary">Add a comment</span>
+                            </div>
+                            <Textarea
+                              value={commentTexts[arg.id] || ''}
+                              onChange={(e) => setCommentTexts(prev => ({ ...prev, [arg.id]: e.target.value }))}
+                              placeholder="Share your thoughts on this argument..."
+                              className="bg-black/50 border-gray-700/50 text-white min-h-[80px] text-sm"
+                            />
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setExpandedComments(prev => {
+                                    const newSet = new Set(prev)
+                                    newSet.delete(arg.id)
+                                    return newSet
+                                  })
+                                  setCommentTexts(prev => {
+                                    const newTexts = { ...prev }
+                                    delete newTexts[arg.id]
+                                    return newTexts
+                                  })
+                                }}
+                                className="text-xs"
+                              >
+                                Cancel
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => handleSubmitComment(arg.id)}
+                                disabled={submittingCommentId === arg.id || !commentTexts[arg.id]?.trim()}
+                                className="bg-green-600 hover:bg-green-700 text-white text-xs"
+                              >
+                                {submittingCommentId === arg.id ? (
+                                  <>
+                                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                    Posting...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Send className="w-3 h-3 mr-1" />
+                                    Post Comment
+                                  </>
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </Card>
                   )
                 })
@@ -1076,7 +1268,7 @@ export default function Home() {
               </div>
 
               {showAddArgumentForm.side === 'con' && (
-                <Card className="bg-[#1f0f0f] border-rose-900/30 p-6">
+                <Card className="glass-panel p-6">
                   <Input
                     value={newArgument.title}
                     onChange={(e) => setNewArgument(prev => ({ ...prev, title: e.target.value }))}
@@ -1120,8 +1312,8 @@ export default function Home() {
               )}
               
               {selectedTopic.con_arguments.length === 0 ? (
-                <Card className="bg-[#1f0f0f] border-rose-900/30 p-6 text-center">
-                  <p className="text-gray-500 text-sm">Nothing here yet, add to the debate!</p>
+                <Card className="glass-panel p-6 text-center">
+                  <p className="text-text-tertiary text-sm">Nothing here yet, add to the debate!</p>
                 </Card>
               ) : (
                 selectedTopic.con_arguments.map((arg) => {
@@ -1135,10 +1327,10 @@ export default function Home() {
                                        parseInt(String(arg.validity_score)) : null
                   
                   const voteCount = arg.votes || 0
-                  const voteColor = voteCount > 0 ? 'text-green-400' : voteCount < 0 ? 'text-red-400' : 'text-gray-500'
+                  const voteColor = voteCount > 0 ? 'text-green-400' : voteCount < 0 ? 'text-red-400' : 'text-text-tertiary'
                   
                   return (
-                  <Card key={arg.id} className="bg-[#1f0f0f] border-rose-900/30 p-6 hover:border-rose-500/50 transition-colors">
+                  <Card key={arg.id} className="card card-hover p-6">
                     {/* Voting UI */}
                     <div className="flex items-center gap-2 mb-3">
                       <div className="flex items-center gap-1 bg-black/30 rounded px-2 py-1 border border-gray-700/50">
@@ -1192,24 +1384,24 @@ export default function Home() {
                         </div>
                       ) : null}
                     </div>
-                    <p className="text-gray-300 mb-3">{arg.content}</p>
+                    <p className="text-text-secondary mb-3">{arg.content}</p>
                     {arg.validity_reasoning && (
                       <div className="mb-3 p-3 bg-black/30 rounded border border-yellow-500/20">
                         <p className="text-xs text-yellow-300 font-semibold mb-1">Fact-Check:</p>
-                        <p className="text-xs text-gray-400">{arg.validity_reasoning}</p>
+                        <p className="text-xs text-text-tertiary">{arg.validity_reasoning}</p>
                       </div>
                     )}
                     {/* User-provided sources */}
                     {arg.sources && arg.sources.trim() !== '' && (
                       <div className="mt-3 pt-3 border-t border-gray-700/50">
-                        <p className="text-xs text-gray-400 mb-2 font-semibold">Provided by author:</p>
-                        <p className="text-xs text-gray-500 font-mono break-words">{arg.sources}</p>
+                        <p className="text-xs text-text-tertiary mb-2 font-semibold">Provided by author:</p>
+                        <p className="text-xs text-text-tertiary font-mono break-words">{arg.sources}</p>
                       </div>
                     )}
                     {/* Fact-checker sources */}
                     {arg.key_urls && arg.key_urls.length > 0 && (
                       <div className="mt-3 pt-3 border-t border-gray-700/50">
-                        <p className="text-xs text-yellow-400 mb-2 font-semibold">Verified using:</p>
+                        <p className="text-xs text-accent-warning mb-2 font-semibold">Verified using:</p>
                         <div className="flex flex-wrap gap-2">
                           {arg.key_urls.slice(0, 3).map((url, idx) => (
                             <a
@@ -1217,7 +1409,7 @@ export default function Home() {
                               href={url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-300 transition-colors"
+                              className="flex items-center gap-1.5 text-xs text-text-tertiary hover:text-text-secondary transition-colors"
                               title={url}
                             >
                               <img
@@ -1233,28 +1425,109 @@ export default function Home() {
                     )}
                     <div className="flex justify-between items-center mt-3">
                       <div className="flex gap-2">
-                        <span className="text-xs text-gray-500 font-mono">by {arg.author}</span>
+                        <span className="text-xs text-text-tertiary font-mono">by {arg.author}</span>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleVerifyArgument(arg.id)}
-                        disabled={verifyingArgumentId === arg.id}
-                        className="text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 h-auto py-1 text-xs"
-                      >
-                        {verifyingArgumentId === arg.id ? (
-                          <>
-                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                            Verifying...
-                          </>
-                        ) : (
-                          <>
-                            <CheckCircle2 className="w-3 h-3 mr-1" />
-                            Verify
-                          </>
-                        )}
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleToggleComments(arg.id)}
+                          className="btn-comment text-text-tertiary hover:text-text-secondary h-auto py-1 text-xs"
+                        >
+                          <MessageSquare className="w-3 h-3 mr-1" />
+                          Comment
+                        </Button>
+                      </div>
                     </div>
+                    
+                    {/* Comments Section */}
+                    {expandedComments.has(arg.id) && (
+                      <div className="mt-4 pt-4 border-t border-gray-700/50">
+                        <div className="space-y-4">
+                          {/* Existing Comments */}
+                          {loadingComments.has(arg.id) ? (
+                            <div className="flex items-center justify-center py-4">
+                              <Loader2 className="w-4 h-4 animate-spin text-text-tertiary" />
+                              <span className="ml-2 text-sm text-text-tertiary">Loading comments...</span>
+                            </div>
+                          ) : comments[arg.id] && comments[arg.id].length > 0 ? (
+                            <div className="space-y-3">
+                              <div className="flex items-center gap-2 mb-2">
+                                <MessageSquare className="w-4 h-4 text-text-tertiary" />
+                                <span className="text-sm font-semibold text-text-secondary">
+                                  Comments ({comments[arg.id].length})
+                                </span>
+                              </div>
+                              {comments[arg.id].map((comment) => (
+                                <div key={comment.id} className="bg-black/30 rounded-lg p-3 border border-gray-700/30">
+                                  <p className="text-sm text-text-secondary whitespace-pre-wrap">{comment.comment}</p>
+                                  <p className="text-xs text-text-tertiary mt-2">
+                                    {new Date(comment.created_at).toLocaleString()}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-sm text-text-tertiary text-center py-2">
+                              No comments yet. Be the first to comment!
+                            </div>
+                          )}
+                          
+                          {/* Add Comment Form */}
+                          <div className="space-y-3 pt-2 border-t border-gray-700/30">
+                            <div className="flex items-center gap-2 mb-2">
+                              <MessageSquare className="w-4 h-4 text-text-tertiary" />
+                              <span className="text-sm font-semibold text-text-secondary">Add a comment</span>
+                            </div>
+                            <Textarea
+                              value={commentTexts[arg.id] || ''}
+                              onChange={(e) => setCommentTexts(prev => ({ ...prev, [arg.id]: e.target.value }))}
+                              placeholder="Share your thoughts on this argument..."
+                              className="bg-black/50 border-gray-700/50 text-white min-h-[80px] text-sm"
+                            />
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setExpandedComments(prev => {
+                                    const newSet = new Set(prev)
+                                    newSet.delete(arg.id)
+                                    return newSet
+                                  })
+                                  setCommentTexts(prev => {
+                                    const newTexts = { ...prev }
+                                    delete newTexts[arg.id]
+                                    return newTexts
+                                  })
+                                }}
+                                className="text-xs"
+                              >
+                                Cancel
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => handleSubmitComment(arg.id)}
+                                disabled={submittingCommentId === arg.id || !commentTexts[arg.id]?.trim()}
+                                className="bg-rose-600 hover:bg-rose-700 text-white text-xs"
+                              >
+                                {submittingCommentId === arg.id ? (
+                                  <>
+                                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                                    Posting...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Send className="w-3 h-3 mr-1" />
+                                    Post Comment
+                                  </>
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </Card>
                   )
                 })
@@ -1263,7 +1536,12 @@ export default function Home() {
           </div>
 
           {/* AI Analysis Section */}
-          <Card className="bg-gradient-to-br from-purple-950/30 to-purple-900/20 border-purple-500/30 p-8">
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1, ease: [0.16, 1, 0.3, 1], delay: 2.3 }}
+          >
+          <Card className="glass-panel p-8">
             <div className="flex items-center gap-3 mb-4">
               <Brain className="w-6 h-6 text-purple-400" />
               <h4 className="text-lg font-semibold text-purple-300">Claude Analysis</h4>
@@ -1281,12 +1559,12 @@ export default function Home() {
               <div className="space-y-6">
                 <div>
                   <h5 className="text-purple-300 font-semibold mb-2">Overall Summary</h5>
-                  <p className="text-gray-300 leading-relaxed">{selectedTopic.overall_summary}</p>
+                  <p className="text-text-secondary leading-relaxed">{selectedTopic.overall_summary}</p>
                 </div>
                 {selectedTopic.consensus_view && (
                   <div>
                     <h5 className="text-purple-300 font-semibold mb-2">Consensus View</h5>
-                    <p className="text-gray-300 leading-relaxed">{selectedTopic.consensus_view}</p>
+                    <p className="text-text-secondary leading-relaxed">{selectedTopic.consensus_view}</p>
                   </div>
                 )}
                 {selectedTopic.timeline_view && selectedTopic.timeline_view.length > 0 && (
@@ -1296,7 +1574,7 @@ export default function Home() {
                       {selectedTopic.timeline_view.map((item, i) => (
                         <div key={i} className="border-l-2 border-purple-500/30 pl-4">
                           <p className="text-purple-400 font-semibold text-sm mb-1">{item.period}</p>
-                          <p className="text-gray-300 text-sm">{item.description}</p>
+                          <p className="text-text-secondary text-sm">{item.description}</p>
                         </div>
                       ))}
                     </div>
@@ -1305,7 +1583,7 @@ export default function Home() {
               </div>
             ) : (
               <div>
-                <p className="text-gray-400">
+                <p className="text-text-secondary">
                   {selectedTopic.pro_arguments.length === 0 || selectedTopic.con_arguments.length === 0
                     ? 'Add at least one pro and one con argument to generate analysis'
                     : 'Analysis will be generated automatically...'}
@@ -1313,52 +1591,60 @@ export default function Home() {
               </div>
             )}
           </Card>
+          </motion.div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-black text-white">
-      {/* Background Grid Pattern */}
-      <div className="fixed inset-0 bg-grid-pattern opacity-20 pointer-events-none" />
+    <div className="relative min-h-screen overflow-hidden text-text-primary">
+      {/* Background */}
+      <div className="fixed inset-0 bg-bg-primary -z-10" />
+      
+      {/* Shader Background */}
+      <div className="fixed inset-0" style={{ zIndex: 0 }}>
+        <ShaderBackground className="w-full h-full pointer-events-none" introDuration={2.5} />
+      </div>
+      
+      {/* Gradient Overlay */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 1, delay: 1.5, ease: "easeOut" }}
+        className="fixed inset-0 bg-gradient-to-b from-black/50 via-black/30 to-black/60 pointer-events-none"
+        style={{ zIndex: 1 }}
+      />
       
       {/* Hero Section */}
-      <section className="relative px-6 pt-8 md:pt-12 pb-20 md:pb-32 max-w-7xl mx-auto">
-        <div className="text-center space-y-8">
-          {/* Animated Visualization */}
-          <div className="mb-6 flex justify-center">
-            <div className="relative w-full max-w-2xl h-32">
-              <div className="absolute inset-0 flex items-center justify-center">
-                <h1 className="text-5xl md:text-7xl font-telka-extended tracking-wide animate-pulse-slow">
-                  Debately
-                </h1>
-              </div>
-              {/* Pro side */}
-              <div className="absolute left-0 top-1/2 -translate-y-1/2 flex gap-2 animate-slide-right">
-                <div className="w-20 h-1 bg-green-500/60 rounded-full" />
-                <div className="w-16 h-1 bg-green-500/40 rounded-full" />
-              </div>
-              {/* Con side */}
-              <div className="absolute right-0 top-1/2 -translate-y-1/2 flex gap-2 animate-slide-left">
-                <div className="w-16 h-1 bg-rose-500/40 rounded-full" />
-                <div className="w-20 h-1 bg-rose-500/60 rounded-full" />
-              </div>
-            </div>
-          </div>
+      <main className="relative z-10 pt-32 pb-20 px-6">
+        <div className="mx-auto max-w-4xl space-y-16">
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1, ease: [0.16, 1, 0.3, 1], delay: 2 }}
+            className="text-center space-y-6"
+          >
+            <p className="text-xl uppercase tracking-[0.4em] text-text-tertiary">
+              Debately
+            </p>
+            <h1 className="text-[clamp(2rem,4.5vw,3.5rem)] font-light leading-tight tracking-[-0.04em]">
+              AI-powered debate platform for <span className="text-white">structured discourse</span>.
+            </h1>
+            <p className="text-text-secondary text-lg">
+              Create topics, contribute arguments, let AI synthesize understanding. The resilient platform for structured debate.
+            </p>
+          </motion.div>
 
-          <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-balance">
-            Every debate. Both sides.
-          </h2>
-          
-          <p className="text-xl md:text-2xl text-gray-400 max-w-3xl mx-auto text-pretty">
-            Create topics, contribute arguments, let AI synthesize understanding. The resilient platform for structured discourse.
-          </p>
-          
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center pt-4">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.6, delay: 2.3, ease: "easeOut" }}
+            className="flex flex-col sm:flex-row gap-4 justify-center items-center"
+          >
             <Button 
               size="lg" 
-              className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white border-0 text-lg px-8 py-6 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-purple-500/50"
+              className="btn-primary text-lg px-8 py-6 rounded-full"
               onClick={handleStartDebate}
             >
               Start a Debate
@@ -1366,174 +1652,55 @@ export default function Home() {
             <Button 
               size="lg" 
               variant="outline" 
-              className="border-gray-700 hover:bg-gray-900 text-white text-lg px-8 py-6 transition-all duration-300"
+              className="text-lg px-8 py-6 rounded-full"
               onClick={handleBrowseTopics}
             >
               Browse Topics
             </Button>
-          </div>
-        </div>
-      </section>
+          </motion.div>
 
-      {/* Features Section */}
-      <section className="relative px-6 py-20 max-w-7xl mx-auto">
-        <div className="grid md:grid-cols-3 gap-8">
-          <Card className="bg-[#1a1a1a] border-[#2a2a2a] p-8 hover:bg-[#1f1f1f] transition-all duration-300 hover:scale-105 hover:shadow-xl">
-            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-green-500/20 to-green-600/20 flex items-center justify-center mb-6">
-              <Users className="w-6 h-6 text-green-500" />
-            </div>
-            <h3 className="text-2xl font-semibold mb-4">Community-Driven Arguments</h3>
-            <p className="text-gray-400 text-lg leading-relaxed">
-              Every topic starts with real perspectives. Users contribute pro and con arguments with sources.
-            </p>
-          </Card>
-
-          <Card className="bg-[#1a1a1a] border-[#2a2a2a] p-8 hover:bg-[#1f1f1f] transition-all duration-300 hover:scale-105 hover:shadow-xl">
-            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-purple-600/20 to-purple-700/20 flex items-center justify-center mb-6">
-              <Brain className="w-6 h-6 text-purple-500" />
-            </div>
-            <h3 className="text-2xl font-semibold mb-4">AI Synthesis</h3>
-            <p className="text-gray-400 text-lg leading-relaxed">
-              Claude analyzes all arguments to generate summaries, identify consensus, and track how debates evolve.
-            </p>
-          </Card>
-
-          <Card className="bg-[#1a1a1a] border-[#2a2a2a] p-8 hover:bg-[#1f1f1f] transition-all duration-300 hover:scale-105 hover:shadow-xl">
-            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-blue-500/20 to-blue-600/20 flex items-center justify-center mb-6">
-              <Scale className="w-6 h-6 text-blue-500" />
-            </div>
-            <h3 className="text-2xl font-semibold mb-4">Structured Discourse</h3>
-            <p className="text-gray-400 text-lg leading-relaxed">
-              Balanced presentation prevents echo chambers. See both sides, understand the nuances.
-            </p>
-          </Card>
-        </div>
-      </section>
-
-      {/* How It Works Section */}
-      <section className="relative px-6 py-20 max-w-5xl mx-auto">
-        <h2 className="text-4xl md:text-5xl font-bold text-center mb-16">How It Works</h2>
-        
-        <div className="space-y-12">
-          {[
-            {
-              number: "01",
-              title: "Create a Topic",
-              description: "Submit a question with your initial pro and con arguments"
-            },
-            {
-              number: "02",
-              title: "Community Contributes",
-              description: "Others add their perspectives and evidence"
-            },
-            {
-              number: "03",
-              title: "AI Synthesizes",
-              description: "Generate analysis showing themes, consensus, and timeline"
-            },
-            {
-              number: "04",
-              title: "Understanding Emerges",
-              description: "Navigate complex debates with clarity"
-            }
-          ].map((step, index) => (
-            <div key={index} className="relative pl-24">
-              {index < 3 && (
-                <div className="absolute left-10 top-16 w-0.5 h-12 bg-gradient-to-b from-purple-600 to-purple-800" />
-              )}
-              <div className="absolute left-0 top-0 w-20 h-20 rounded-full bg-gradient-to-br from-purple-600 to-purple-800 flex items-center justify-center font-mono text-2xl font-bold shadow-lg shadow-purple-500/30">
-                {step.number}
-              </div>
-              <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-8 hover:bg-[#1f1f1f] transition-all duration-300">
-                <h3 className="text-2xl font-semibold mb-3">{step.title}</h3>
-                <p className="text-gray-400 text-lg">{step.description}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Sample Topic Preview */}
-      <section className="relative px-6 py-20 max-w-7xl mx-auto">
-        <h2 className="text-4xl md:text-5xl font-bold text-center mb-16">See It In Action</h2>
-        
-        <div className="relative bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a] border border-[#2a2a2a] rounded-2xl p-8 shadow-2xl">
-          <div className="absolute inset-0 bg-gradient-to-r from-purple-500/5 via-transparent to-purple-500/5 rounded-2xl" />
-          
-          <div className="relative space-y-6">
-            <div className="flex items-center gap-3 mb-8">
-              <span className="font-mono text-sm text-gray-500">TOPIC</span>
-              <h3 className="text-2xl font-semibold">Should remote work be the default?</h3>
-            </div>
-
-            <div className="grid md:grid-cols-2 gap-6">
-              {/* Pro Column */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-1 h-6 bg-green-500 rounded-full" />
-                  <h4 className="text-lg font-semibold text-green-500">Pro Arguments</h4>
-                </div>
-                
-                {["Increased productivity and focus", "Better work-life balance", "Cost savings for companies"].map((arg, i) => (
-                  <Card key={i} className="bg-[#0f1f0f] border-green-900/30 p-4 hover:border-green-500/50 transition-colors">
-                    <p className="text-gray-300">{arg}</p>
-                    <span className="text-xs text-gray-500 font-mono mt-2 block">+24 sources</span>
-                  </Card>
-                ))}
-              </div>
-
-              {/* Con Column */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-1 h-6 bg-rose-500 rounded-full" />
-                  <h4 className="text-lg font-semibold text-rose-500">Con Arguments</h4>
-                </div>
-                
-                {["Reduced team collaboration", "Isolation and mental health concerns", "Security and IP risks"].map((arg, i) => (
-                  <Card key={i} className="bg-[#1f0f0f] border-rose-900/30 p-4 hover:border-rose-500/50 transition-colors">
-                    <p className="text-gray-300">{arg}</p>
-                    <span className="text-xs text-gray-500 font-mono mt-2 block">+18 sources</span>
-                  </Card>
-                ))}
-              </div>
-            </div>
-
-            {/* AI Analysis Section */}
-            <Card className="bg-gradient-to-br from-purple-950/30 to-purple-900/20 border-purple-500/30 p-6 mt-8">
-              <div className="flex items-center gap-3 mb-4">
-                <Brain className="w-6 h-6 text-purple-400" />
-                <h4 className="text-lg font-semibold text-purple-300">Claude Analysis</h4>
-                <span className="ml-auto text-xs text-purple-400 font-mono">Generated 2 min ago</span>
-              </div>
-              <p className="text-gray-300 leading-relaxed">
-                The debate reveals a nuanced consensus: remote work offers significant individual benefits but requires intentional systems for collaboration. Most effective organizations adopt hybrid models that preserve autonomy while maintaining connection...
-              </p>
-              <Button 
-                variant="ghost" 
-                className="mt-4 text-purple-400 hover:text-purple-300 hover:bg-purple-950/50"
+          {/* Features Section */}
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1, delay: 2.5, ease: [0.16, 1, 0.3, 1] }}
+            className="grid gap-6 md:grid-cols-3"
+          >
+            {[
+              {
+                number: "01",
+                title: "Community-Driven Arguments",
+                description: "Every topic starts with real perspectives. Users contribute pro and con arguments with sources."
+              },
+              {
+                number: "02",
+                title: "AI Synthesis",
+                description: "Claude analyzes all arguments to generate summaries, identify consensus, and track how debates evolve."
+              },
+              {
+                number: "03",
+                title: "Structured Discourse",
+                description: "Balanced presentation prevents echo chambers. See both sides, understand the nuances."
+              }
+            ].map((feature, index) => (
+              <motion.div
+                key={feature.title}
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.8, delay: 2.6 + 0.15 * index, ease: [0.16, 1, 0.3, 1] }}
+                className="card card-hover text-left p-8"
               >
-                Read Full Analysis →
-              </Button>
-            </Card>
-          </div>
+                <p className="text-sm uppercase tracking-[0.3em] text-text-tertiary mb-3">
+                  {feature.number}
+                </p>
+                <h3 className="text-xl font-light mb-2">{feature.title}</h3>
+                <p className="text-text-secondary text-sm">{feature.description}</p>
+              </motion.div>
+            ))}
+          </motion.div>
         </div>
-      </section>
+      </main>
 
-      {/* Footer */}
-      <footer className="relative px-6 py-12 border-t border-[#2a2a2a] mt-20">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-            <div className="text-center md:text-left">
-              <h3 className="text-2xl font-bold mb-2">Debately</h3>
-              <p className="text-gray-500 text-sm">Build understanding through structured debate</p>
-            </div>
-            
-            <div className="text-sm text-gray-500 font-mono">
-              Built for Claude Builders Hackathon 2025
-            </div>
-          </div>
-        </div>
-      </footer>
     </div>
   )
 }
