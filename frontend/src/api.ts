@@ -81,10 +81,20 @@ export interface ValidityVerdictResponse {
   source_count: number;
 }
 
-export interface ArgumentMatch {
-  pro_id: number;
-  con_id: number;
-  reason?: string | null;
+
+export interface CommentCreate {
+  comment: string;
+}
+
+export interface CommentCreateResponse {
+  comment_id: number;
+}
+
+export interface CommentResponse {
+  id: number;
+  argument_id: number;
+  comment: string;
+  created_at: string;
 }
 
 // Error handling helper
@@ -255,19 +265,6 @@ export async function getArgumentsSortedByValidity(
   return handleResponse<ArgumentResponse[]>(response);
 }
 
-/**
- * Get argument matches (pro/con pairs that rebut each other)
- * POST /api/topics/{topic_id}/match-arguments
- */
-export async function getArgumentMatches(topicId: number): Promise<ArgumentMatch[]> {
-  const response = await fetch(`${API_BASE_URL}/api/topics/${topicId}/match-arguments`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-  return handleResponse<ArgumentMatch[]>(response);
-}
 
 /**
  * Upvote an argument
@@ -295,5 +292,37 @@ export async function downvoteArgument(argumentId: number): Promise<{ argument_i
     },
   });
   return handleResponse<{ argument_id: number; votes: number }>(response);
+}
+
+/**
+ * Get all comments for an argument
+ * GET /api/arguments/{argument_id}/comments
+ */
+export async function getComments(argumentId: number): Promise<CommentResponse[]> {
+  const response = await fetch(`${API_BASE_URL}/api/arguments/${argumentId}/comments`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+  return handleResponse<CommentResponse[]>(response);
+}
+
+/**
+ * Create a comment on an argument
+ * POST /api/arguments/{argument_id}/comment
+ */
+export async function commentOnArgument(
+  argumentId: number,
+  data: CommentCreate
+): Promise<CommentCreateResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/arguments/${argumentId}/comment`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+  return handleResponse<CommentCreateResponse>(response);
 }
 

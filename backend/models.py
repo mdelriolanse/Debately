@@ -99,3 +99,14 @@ class ArgumentWithValidityResponse(ArgumentResponse):
     class Config:
         from_attributes = True
 
+class CommentCreate(BaseModel):
+    comment: str
+
+class CommentCreateResponse(BaseModel):
+    comment_id: int
+
+class CommentResponse(BaseModel):
+    id: int
+    argument_id: int
+    comment: str
+    created_at: str

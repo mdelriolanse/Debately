@@ -5,8 +5,12 @@ from datetime import datetime
 from typing import Optional, List
 import json
 import os
+from pathlib import Path
 from dotenv import load_dotenv
-load_dotenv()
+
+# Load .env file from the backend directory (works in both local and Docker)
+env_path = Path(__file__).parent / '.env'
+load_dotenv(dotenv_path=env_path)
 
 # Database connection parameters from environment variables
 # Default values are sample/placeholder - use .env file for real values
@@ -65,6 +69,16 @@ def init_db():
             author TEXT NOT NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE CASCADE
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS comments (
+            id SERIAL PRIMARY KEY,
+            argument_id INTEGER NOT NULL,
+            comment TEXT NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (argument_id) REFERENCES arguments(id) ON DELETE CASCADE
         )
     """)
     
@@ -567,3 +581,46 @@ def downvote_argument(argument_id: int) -> int:
     cursor.close()
     conn.close()
     return votes
+
+def create_comment(argument_id: int, comment: str) -> int:
+    """Create a new comment for an argument and return the comment ID."""
+    conn = get_db_connection() 
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """INSERT INTO comments (argument_id, comment, created_at) VALUES (%s, %s, %s) RETURNING id""",
+        (argument_id, comment, datetime.now(timezone.utc))
+    )
+
+    result = cursor.fetchone()
+    comment_id = result[0] if result else None
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return comment_id
+
+def get_comments(argument_id: int) -> list[dict]:
+    """Get all comments for an argument, ordered by creation date (oldest first)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT id, argument_id, comment, created_at
+        FROM comments
+        WHERE argument_id = %s
+        ORDER BY created_at ASC
+    """, (argument_id,))
+    
+    rows = cursor.fetchall()
+    comments = []
+    for row in rows:
+        comments.append({
+            'id': row[0],
+            'argument_id': row[1],
+            'comment': row[2],
+            'created_at': row[3].isoformat() if row[3] else None
+        })
+    
+    cursor.close()
+    conn.close()
+    return comments
