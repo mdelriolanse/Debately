@@ -7,20 +7,20 @@ const API_BASE_URL = 'http://localhost:8080';
 
 // Types matching backend models
 export interface TopicCreate {
-  question: string;
+  proposition: string;
   created_by: string;
 }
 
 export interface TopicResponse {
   topic_id: number;
-  question: string;
+  proposition: string;
   created_by: string;
   created_at?: string;
 }
 
 export interface TopicListItem {
   id: number;
-  question: string;
+  proposition: string;
   pro_count: number;
   con_count: number;
   created_by?: string;
@@ -56,7 +56,7 @@ export interface ArgumentResponse {
 
 export interface TopicDetailResponse {
   id: number;
-  question: string;
+  proposition: string;
   pro_arguments: ArgumentResponse[];
   con_arguments: ArgumentResponse[];
   overall_summary?: string | null;
@@ -95,6 +95,23 @@ export interface CommentResponse {
   argument_id: number;
   comment: string;
   created_at: string;
+}
+
+export interface PropositionValidateRequest {
+  proposition: string;
+}
+
+export interface PropositionSuggestion {
+  proposition: string;
+  type: "policy" | "value" | "fact";
+}
+
+export interface PropositionValidationResponse {
+  original_input: string;
+  is_valid: boolean;
+  rejection_reason: string | null;
+  interpretation: string | null;
+  suggestions: PropositionSuggestion[];
 }
 
 // Error handling helper
@@ -324,5 +341,22 @@ export async function commentOnArgument(
     body: JSON.stringify(data),
   });
   return handleResponse<CommentCreateResponse>(response);
+}
+
+/**
+ * Validate a proposition and get suggestions
+ * POST /api/topics/validate-proposition
+ */
+export async function validateProposition(
+  data: PropositionValidateRequest
+): Promise<PropositionValidationResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/topics/validate-proposition`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+  return handleResponse<PropositionValidationResponse>(response);
 }
 
