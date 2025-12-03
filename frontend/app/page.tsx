@@ -17,11 +17,14 @@ import {
   downvoteArgument,
   commentOnArgument,
   getComments,
+  validateProposition,
   type TopicListItem,
   type TopicDetailResponse,
   type ArgumentCreate,
   type CommentCreate,
-  type CommentResponse
+  type CommentResponse,
+  type PropositionValidationResponse,
+  type PropositionSuggestion
 } from '@/src/api'
 
 export default function Home() {
@@ -53,6 +56,21 @@ export default function Home() {
   const [submittingCommentId, setSubmittingCommentId] = useState<number | null>(null)
   const [comments, setComments] = useState<Record<number, CommentResponse[]>>({})
   const [loadingComments, setLoadingComments] = useState<Set<number>>(new Set())
+  
+  // Proposition validation state
+  const [validationState, setValidationState] = useState<{
+    result: PropositionValidationResponse | null;
+    iterationCount: number;
+    showSuggestions: boolean;
+    isValidating: boolean;
+  }>({
+    result: null,
+    iterationCount: 0,
+    showSuggestions: false,
+    isValidating: false
+  })
+  const [selectedProposition, setSelectedProposition] = useState<string | null>(null)
+  const [validationInput, setValidationInput] = useState<string>('')
 
   // Helper function to extract domain from URL
   const getDomain = (url: string): string => {
@@ -169,8 +187,73 @@ export default function Home() {
     }))
   }
 
-  const handleSubmitDebate = async (e: React.FormEvent) => {
-    e.preventDefault()
+  // Validation handler functions
+  const handleValidateProposition = async (proposition: string) => {
+    if (!proposition.trim()) {
+      setError('Please enter a proposition to validate')
+      return
+    }
+
+    setValidationState(prev => ({ ...prev, isValidating: true }))
+    setError(null)
+    setValidationInput(proposition)
+
+    try {
+      const result = await validateProposition({ proposition })
+      setValidationState(prev => ({
+        result,
+        iterationCount: prev.iterationCount + 1,
+        showSuggestions: true,
+        isValidating: false
+      }))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to validate proposition')
+      setValidationState(prev => ({ ...prev, isValidating: false }))
+      console.error('Error validating proposition:', err)
+    }
+  }
+
+  const handleSelectSuggestion = async (suggestion: PropositionSuggestion) => {
+    // Set selected proposition and proceed to topic creation
+    setSelectedProposition(suggestion.proposition)
+    setValidationState(prev => ({ ...prev, showSuggestions: false }))
+    
+    // Automatically trigger topic creation
+    await handleCreateTopicWithProposition(suggestion.proposition)
+  }
+
+  const handleTryAgain = async (newInput: string) => {
+    if (validationState.iterationCount >= 5) {
+      setError('Maximum validation attempts reached. Please select a suggestion.')
+      return
+    }
+    await handleValidateProposition(newInput)
+  }
+
+  const handleContinueWithOriginal = async () => {
+    if (!validationState.result) return
+    
+    // Use original input as selected proposition
+    setSelectedProposition(validationState.result.original_input)
+    setValidationState(prev => ({ ...prev, showSuggestions: false }))
+    
+    // Proceed to topic creation
+    await handleCreateTopicWithProposition(validationState.result.original_input)
+  }
+
+  const handleCancelValidation = () => {
+    setValidationState({
+      result: null,
+      iterationCount: 0,
+      showSuggestions: false,
+      isValidating: false
+    })
+    setSelectedProposition(null)
+    setValidationInput('')
+    setError(null)
+  }
+
+  const handleCreateTopicWithProposition = async (proposition: string) => {
     setLoading(true)
     setError(null)
 
@@ -181,9 +264,9 @@ export default function Home() {
         throw new Error('Please provide at least one pro or con argument')
       }
 
-      // Create the topic
+      // Create the topic with the selected proposition
       const topicResponse = await createTopic({
-        question: newDebateForm.title,
+        proposition,
         created_by: newDebateForm.createdBy
       })
 
@@ -215,13 +298,21 @@ export default function Home() {
         }
       }
 
-      // Reset form and navigate
+      // Reset form and validation state
       setNewDebateForm({
         title: '',
         createdBy: 'user',
         proArgs: [{ title: '', content: '', sources: '' }],
         conArgs: [{ title: '', content: '', sources: '' }]
       })
+      setValidationState({
+        result: null,
+        iterationCount: 0,
+        showSuggestions: false,
+        isValidating: false
+      })
+      setSelectedProposition(null)
+      setValidationInput('')
       setView('browse')
       // Refresh topics list
       await fetchTopics()
@@ -233,9 +324,35 @@ export default function Home() {
     }
   }
 
+  const handleSubmitDebate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    // If proposition has been selected (from validation), proceed directly to topic creation
+    if (selectedProposition) {
+      await handleCreateTopicWithProposition(selectedProposition)
+      return
+    }
+
+    // Otherwise, start validation flow
+    if (!newDebateForm.title.trim()) {
+      setError('Please enter a debate topic')
+      return
+    }
+
+    await handleValidateProposition(newDebateForm.title)
+  }
+
   const handleBackFromCreate = () => {
     setView('landing')
     setError(null)
+    setValidationState({
+      result: null,
+      iterationCount: 0,
+      showSuggestions: false,
+      isValidating: false
+    })
+    setSelectedProposition(null)
+    setValidationInput('')
     setNewDebateForm({
       title: '',
       createdBy: 'user',
@@ -603,6 +720,159 @@ export default function Home() {
               </div>
             </div>
 
+            {/* Validation UI */}
+            {validationState.showSuggestions && validationState.result && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+                className="space-y-6"
+              >
+                <Card className="glass-panel p-6 border-2">
+                  {/* Validation Status */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      {validationState.result.is_valid ? (
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full bg-green-500" />
+                          <span className="text-green-400 font-semibold">Valid Proposition</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full bg-red-500" />
+                          <span className="text-red-400 font-semibold">Invalid Proposition</span>
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-text-tertiary text-sm">
+                      Attempt {validationState.iterationCount} of 5
+                    </span>
+                  </div>
+
+                  {/* Interpretation */}
+                  {validationState.result.interpretation && (
+                    <div className="mb-4 p-4 bg-black/30 rounded-lg">
+                      <p className="text-text-secondary text-sm">
+                        <span className="font-semibold">Interpretation:</span> {validationState.result.interpretation}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Rejection Reason */}
+                  {!validationState.result.is_valid && validationState.result.rejection_reason && (
+                    <div className="mb-4 p-4 bg-red-950/20 border border-red-500/30 rounded-lg">
+                      <p className="text-red-400 text-sm">
+                        <span className="font-semibold">Rejection Reason:</span> {validationState.result.rejection_reason}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Suggestions */}
+                  {validationState.result.suggestions.length > 0 && (
+                    <div className="mb-6">
+                      <h3 className="text-lg font-semibold mb-3">
+                        {validationState.result.is_valid ? 'Suggested Alternatives:' : 'Suggested Propositions:'}
+                      </h3>
+                      <div className="space-y-3">
+                        {validationState.result.suggestions.map((suggestion, index) => {
+                          const typeColors = {
+                            policy: 'bg-blue-500/20 border-blue-500/30 text-blue-400',
+                            value: 'bg-purple-500/20 border-purple-500/30 text-purple-400',
+                            fact: 'bg-yellow-500/20 border-yellow-500/30 text-yellow-400'
+                          }
+                          return (
+                            <Card key={index} className="glass-panel p-4 border">
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <span className={`px-2 py-1 rounded text-xs font-semibold ${typeColors[suggestion.type] || typeColors.policy}`}>
+                                      {suggestion.type.toUpperCase()}
+                                    </span>
+                                  </div>
+                                  <p className="text-text-primary">{suggestion.proposition}</p>
+                                </div>
+                                <Button
+                                  onClick={() => handleSelectSuggestion(suggestion)}
+                                  disabled={loading}
+                                  className="btn-primary whitespace-nowrap"
+                                >
+                                  Use This
+                                </Button>
+                              </div>
+                            </Card>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* User Actions */}
+                  <div className="space-y-4 pt-4 border-t border-gray-700">
+                    {/* Try Again Section */}
+                    {validationState.iterationCount < 5 ? (
+                      <div>
+                        <label className="block text-sm font-semibold mb-2">Try Again:</label>
+                        <div className="flex gap-2">
+                          <Input
+                            value={validationInput || validationState.result.original_input}
+                            onChange={(e) => setValidationInput(e.target.value)}
+                            placeholder="Enter a new proposition..."
+                            className="flex-1 bg-black/50 border-gray-700 text-white"
+                            disabled={loading || validationState.isValidating}
+                          />
+                          <Button
+                            onClick={() => handleTryAgain(validationInput || validationState.result.original_input)}
+                            disabled={loading || validationState.isValidating || !(validationInput || validationState.result.original_input).trim()}
+                            variant="outline"
+                          >
+                            {validationState.isValidating ? (
+                              <>
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                Validating...
+                              </>
+                            ) : (
+                              'Re-validate'
+                            )}
+                          </Button>
+                        </div>
+                        <p className="text-xs text-text-tertiary mt-1">
+                          {5 - validationState.iterationCount} attempts remaining
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="p-4 bg-yellow-950/20 border border-yellow-500/30 rounded-lg">
+                        <p className="text-yellow-400 text-sm">
+                          Maximum validation attempts reached. Please select one of the suggestions above.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Continue with Original (only if valid) */}
+                    {validationState.result.is_valid && (
+                      <Button
+                        onClick={handleContinueWithOriginal}
+                        disabled={loading}
+                        variant="outline"
+                        className="w-full"
+                      >
+                        Continue with Original Proposition
+                      </Button>
+                    )}
+
+                    {/* Cancel */}
+                    <Button
+                      onClick={handleCancelValidation}
+                      disabled={loading || validationState.isValidating}
+                      variant="ghost"
+                      className="w-full"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </Card>
+              </motion.div>
+            )}
+
             {/* Submit Button */}
             <div className="flex justify-end gap-4 pt-6">
               <Button 
@@ -610,15 +880,21 @@ export default function Home() {
                 variant="outline" 
                 onClick={handleBackFromCreate}
                 className="px-8 py-6"
+                disabled={loading || validationState.isValidating}
               >
                 Cancel
               </Button>
               <Button 
                 type="submit"
-                disabled={loading}
+                disabled={loading || validationState.isValidating || validationState.showSuggestions}
                 className="btn-primary px-8 py-6 disabled:opacity-50"
               >
-                {loading ? (
+                {validationState.isValidating ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Validating...
+                  </>
+                ) : loading ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Creating...
@@ -712,7 +988,7 @@ export default function Home() {
             const filteredTopics = searchQuery.trim() === '' 
               ? topics 
               : topics.filter(topic => 
-                  topic.question.toLowerCase().includes(searchQuery.toLowerCase())
+                  topic.proposition.toLowerCase().includes(searchQuery.toLowerCase())
                 )
             
             if (filteredTopics.length === 0) {
@@ -763,7 +1039,7 @@ export default function Home() {
                     className="card card-hover p-8 cursor-pointer"
                     onClick={() => handleSelectTopic(topic)}
                   >
-                  <h3 className="text-2xl font-semibold mb-4">{topic.question}</h3>
+                  <h3 className="text-2xl font-semibold mb-4">{topic.proposition}</h3>
                   <div className="space-y-3">
                     {/* Argument counts - always show */}
                     <div className="flex gap-6 text-sm">
@@ -931,7 +1207,7 @@ export default function Home() {
                     </div>
                     {selectedTopic && (
                       <p className="text-sm text-text-tertiary mb-4">
-                        Please submit an argument with factual claims related to: <span className="text-text-secondary font-semibold">"{selectedTopic.question}"</span>
+                        Please submit an argument with factual claims related to: <span className="text-text-secondary font-semibold">"{selectedTopic.proposition}"</span>
                       </p>
                     )}
                     <Button
@@ -956,7 +1232,7 @@ export default function Home() {
               <span className="font-mono text-sm text-text-tertiary uppercase tracking-[0.3em]">Topic</span>
             </div>
             <div>
-              <h1 className="text-[clamp(2rem,4vw,3.5rem)] font-light leading-tight tracking-[-0.04em]">{selectedTopic.question}</h1>
+              <h1 className="text-[clamp(2rem,4vw,3.5rem)] font-light leading-tight tracking-[-0.04em]">{selectedTopic.proposition}</h1>
               <p className="text-sm text-text-tertiary mt-2">Arguments sorted by validity (highest quality first)</p>
             </div>
           </motion.div>
