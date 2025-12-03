@@ -5,7 +5,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/arguments", tags=["voting"])
+router = APIRouter(prefix="/api/arguments", tags=["arguments"])
 
 @router.post("/{argument_id}/upvote")
 async def upvote_argument(argument_id: int):

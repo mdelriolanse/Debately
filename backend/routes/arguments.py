@@ -37,7 +37,7 @@ async def create_argument(topic_id: int, argument: ArgumentCreate):
         verdict = fact_checker.verify_argument(
             title=argument.title,
             content=argument.content,
-            debate_question=topic['question']
+            debate_proposition=topic['proposition']
         )
         
         # Reject irrelevant arguments
@@ -45,7 +45,7 @@ async def create_argument(topic_id: int, argument: ArgumentCreate):
             error_detail = {
                 "error": "Argument not relevant",
                 "reasoning": verdict.reasoning,
-                "message": f"This argument was rejected as not relevant to the debate topic: '{topic['question']}'. Please submit an argument with factual claims related to the debate."
+                "message": f"This argument was rejected as not relevant to the debate proposition: '{topic['proposition']}'. Please submit an argument with factual claims related to the debate."
             }
             logger.warning(f"Argument rejected as not relevant: {error_detail}")
             raise HTTPException(status_code=400, detail=error_detail)

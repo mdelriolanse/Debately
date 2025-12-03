@@ -26,7 +26,7 @@ async def generate_summary(topic_id: int):
     try:
         # Call Claude service
         result = claude_service.generate_summary(
-            question=topic_data['question'],
+            proposition=topic_data['proposition'],
             pro_arguments=pro_arguments,
             con_arguments=con_arguments
         )

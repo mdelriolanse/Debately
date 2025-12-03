@@ -15,12 +15,12 @@ if not ANTHROPIC_API_KEY:
 client = Anthropic(api_key=ANTHROPIC_API_KEY)
 MODEL = "claude-sonnet-4-20250514"
 
-def generate_summary(question: str, pro_arguments: List[Dict], con_arguments: List[Dict]) -> Dict:
+def generate_summary(proposition: str, pro_arguments: List[Dict], con_arguments: List[Dict]) -> Dict:
     """
     Generate overall summary, consensus view, and timeline view using Claude.
     
     Args:
-        question: The debate question
+        proposition: The debate proposition
         pro_arguments: List of pro arguments with 'title' and 'content'
         con_arguments: List of con arguments with 'title' and 'content'
     
@@ -39,7 +39,7 @@ def generate_summary(question: str, pro_arguments: List[Dict], con_arguments: Li
         for arg in con_arguments
     ]) if con_arguments else "None"
     
-    prompt = f"""You are analyzing a debate on: {question}
+    prompt = f"""You are analyzing a debate on: {proposition}
 
 PRO arguments:
 {pro_text}

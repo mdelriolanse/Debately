@@ -37,7 +37,7 @@ class ValidityVerdict(BaseModel):
     source_count: int = Field(..., description="Number of sources found")
 
 
-def extract_core_claim(title: str, content: str, debate_question: str) -> str:
+def extract_core_claim(title: str, content: str, debate_proposition: str) -> str:
     """
     STEP 1: Extract the core verifiable claim from an argument.
     
@@ -46,12 +46,12 @@ def extract_core_claim(title: str, content: str, debate_question: str) -> str:
     Args:
         title: Argument title
         content: Argument content
-        debate_question: The debate topic/question this argument is responding to
+        debate_proposition: The debate proposition this argument is responding to
     
     Returns:
         Extracted claim in 2 sentences or less
     """
-    prompt = f"""You are analyzing an argument in a debate about: {debate_question}
+    prompt = f"""You are analyzing an argument in a debate about: {debate_proposition}
 
 Extract the core verifiable claim from this argument. Focus on factual statements that can be researched and verified, not opinions or rhetoric.
 
@@ -143,7 +143,7 @@ Content: {content}...
     return "\n".join(formatted)
 
 
-def analyze_and_score(original_claim: str, tavily_results: List[Dict], debate_question: str) -> ValidityVerdict:
+def analyze_and_score(original_claim: str, tavily_results: List[Dict], debate_proposition: str) -> ValidityVerdict:
     """
     STEP 3: Analyze evidence and assign validity score.
     
@@ -152,6 +152,7 @@ def analyze_and_score(original_claim: str, tavily_results: List[Dict], debate_qu
     Args:
         original_claim: The extracted core claim
         tavily_results: List of Tavily search results
+        debate_proposition: The debate proposition this argument is responding to
     
     Returns:
         ValidityVerdict with score, reasoning, and key URLs
@@ -165,7 +166,7 @@ def analyze_and_score(original_claim: str, tavily_results: List[Dict], debate_qu
         scores = [r.get('score', 0) for r in tavily_results]
         avg_score = sum(scores) / len(scores) if scores else 0.0
     
-    prompt = f"""You are fact-checking an argument in a debate about: {debate_question}
+    prompt = f"""You are fact-checking an argument in a debate about: {debate_proposition}
 
 FIRST, determine if this argument is RELEVANT to the debate topic.
 
@@ -373,28 +374,28 @@ IMPORTANT:
         raise RuntimeError(f"Failed to analyze and score: {str(e)}")
 
 
-def verify_argument(title: str, content: str, debate_question: str) -> ValidityVerdict:
+def verify_argument(title: str, content: str, debate_proposition: str) -> ValidityVerdict:
     """
     Main pipeline function that chains all 3 steps together.
     
     Args:
         title: Argument title
         content: Argument content
-        debate_question: The debate topic/question this argument is responding to
+        debate_proposition: The debate proposition this argument is responding to
     
     Returns:
         ValidityVerdict with fact-checking results
     """
     try:
         # Step 1: Extract core claim
-        claim = extract_core_claim(title, content, debate_question)
+        claim = extract_core_claim(title, content, debate_proposition)
         
         # If no verifiable claims found, return irrelevant verdict
         if claim.upper() == "NO VERIFIABLE FACTUAL CLAIMS" or not claim.strip():
             return ValidityVerdict(
                 is_relevant=False,
                 validity_score=1,
-                reasoning=f"This argument contains no verifiable factual claims related to the debate topic: '{debate_question}'. It consists only of opinions, rhetoric, or emotional statements that cannot be fact-checked.",
+                reasoning=f"This argument contains no verifiable factual claims related to the debate proposition: '{debate_proposition}'. It consists only of opinions, rhetoric, or emotional statements that cannot be fact-checked.",
                 key_urls=[],
                 source_count=0
             )
@@ -423,7 +424,7 @@ def verify_argument(title: str, content: str, debate_question: str) -> ValidityV
             )
         
         # Step 3: Analyze and score using only filtered high-quality sources
-        verdict = analyze_and_score(claim, top_sources, debate_question)
+        verdict = analyze_and_score(claim, top_sources, debate_proposition)
         
         # Extract URLs from top sources for key_urls (only high-quality sources with score > 0.5)
         key_urls = [source.get('url', '') for source in top_sources if source.get('url')]

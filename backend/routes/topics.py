@@ -2,29 +2,43 @@ from fastapi import APIRouter, HTTPException
 import database
 import fact_checker
 import claude_service
-from models import TopicCreate, TopicResponse, TopicListItem, TopicDetailResponse
+from validate_proposition import validate_proposition
+from models import PropositionValidateRequest, PropositionValidationResponse, TopicCreate, TopicResponse, TopicListItem, TopicDetailResponse
 
 router = APIRouter(prefix="/api/topics", tags=["topics"])
+
+@router.post("/validate-proposition", tags=["topics"])
+async def validate_proposition_endpoint(request: PropositionValidateRequest):
+    """Validate a proposition and return suggestions"""
+    try:
+        result = validate_proposition(request.proposition)
+        return PropositionValidationResponse(**result)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to validate proposition: {str(e)}")
 
 @router.post("", response_model=TopicResponse, status_code=201)
 async def create_topic(topic: TopicCreate):
     """Create a new debate topic."""
     try:
 
-        topic.question
-
         topic_data = database.create_topic(
-            question=topic.question,
+            proposition=topic.proposition,
             created_by=topic.created_by
         )
         if not topic_data:
             raise HTTPException(status_code=500, detail="Failed to create topic")
         return TopicResponse(
             topic_id=topic_data['id'],
-            question=topic_data['question'],
+            proposition=topic_data['proposition'],
             created_by=topic_data['created_by'],
             created_at=topic_data.get('created_at')
         )
+
+
+        
+
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create topic: {str(e)}")
 
@@ -62,7 +76,7 @@ async def get_topic(topic_id: int):
                     verdict = fact_checker.verify_argument(
                         title=arg['title'],
                         content=arg['content'],
-                        debate_question=topic_data['question']
+                        debate_proposition=topic_data['proposition']
                     )
                     database.update_argument_validity(
                         argument_id=arg['id'],
@@ -92,7 +106,7 @@ async def get_topic(topic_id: int):
         if pro_args and con_args:
             try:
                 result = claude_service.generate_summary(
-                    question=topic_data['question'],
+                    proposition=topic_data['proposition'],
                     pro_arguments=pro_args,
                     con_arguments=con_args
                 )

@@ -17,17 +17,17 @@ async def verify_argument(argument_id: int):
     if not argument:
         raise HTTPException(status_code=404, detail=f"Argument with id {argument_id} not found")
     
-    # Get the topic/question for context
+    # Get the topic/proposition for context
     topic = database.get_topic(argument['topic_id'])
     if not topic:
         raise HTTPException(status_code=404, detail=f"Topic for argument {argument_id} not found")
     
     try:
-        # Run fact-checking pipeline with debate question context
+        # Run fact-checking pipeline with debate proposition context
         verdict = fact_checker.verify_argument(
             title=argument['title'],
             content=argument['content'],
-            debate_question=topic['question']
+            debate_proposition=topic['proposition']
         )
         
         # Save results to database
@@ -77,7 +77,7 @@ async def verify_all_arguments(topic_id: int):
             verdict = fact_checker.verify_argument(
                 title=arg['title'],
                 content=arg['content'],
-                debate_question=topic['question']
+                debate_proposition=topic['proposition']
             )
             
             # Save results to database

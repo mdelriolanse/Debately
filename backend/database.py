@@ -48,7 +48,7 @@ def init_db():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS topics (
             id SERIAL PRIMARY KEY,
-            question TEXT NOT NULL,
+            proposition TEXT NOT NULL,
             created_by TEXT NOT NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             overall_summary TEXT,
@@ -120,13 +120,13 @@ def get_topic(topic_id: int) -> Optional[dict]:
         return topic
     return None
 
-def create_topic(question: str, created_by: str) -> dict:
+def create_topic(proposition: str, created_by: str) -> dict:
     """Create a new topic and return the full topic data."""
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     cursor.execute(
-        "INSERT INTO topics (question, created_by, created_at) VALUES (%s, %s, %s) RETURNING *",
-        (question, created_by, datetime.now(timezone.utc))
+        "INSERT INTO topics (proposition, created_by, created_at) VALUES (%s, %s, %s) RETURNING *",
+        (proposition, created_by, datetime.now(timezone.utc))
     )
     row = cursor.fetchone()
     conn.commit()
@@ -147,14 +147,14 @@ def get_all_topics() -> list:
     cursor.execute("""
         SELECT 
             t.id,
-            t.question,
+            t.proposition,
             t.created_by,
             t.created_at,
             COUNT(CASE WHEN a.side = 'pro' THEN 1 END) as pro_count,
             COUNT(CASE WHEN a.side = 'con' THEN 1 END) as con_count
         FROM topics t
         LEFT JOIN arguments a ON t.id = a.topic_id
-        GROUP BY t.id, t.question, t.created_by, t.created_at
+        GROUP BY t.id, t.proposition, t.created_by, t.created_at
         ORDER BY t.created_at DESC
     """)
     
@@ -264,7 +264,7 @@ def get_topic_with_arguments(topic_id: int) -> Optional[dict]:
     
     return {
         'id': topic['id'],
-        'question': topic['question'],
+        'proposition': topic['proposition'],
         'created_by': topic['created_by'],
         'created_at': _format_datetime_to_iso(topic.get('created_at')),
         'pro_arguments': pro_arguments,

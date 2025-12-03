@@ -4,7 +4,7 @@ from datetime import datetime
 
 # Request Models
 class TopicCreate(BaseModel):
-    question: str = Field(..., description="The debate question")
+    proposition: str = Field(..., description="The debate proposition")
     created_by: str = Field(..., description="Username of the creator")
 
 class ArgumentCreate(BaseModel):
@@ -17,7 +17,7 @@ class ArgumentCreate(BaseModel):
 # Response Models
 class TopicResponse(BaseModel):
     topic_id: int
-    question: str
+    proposition: str
     created_by: str
     created_at: Optional[str] = None
 
@@ -26,7 +26,7 @@ class TopicResponse(BaseModel):
 
 class TopicListItem(BaseModel):
     id: int
-    question: str
+    proposition: str
     pro_count: int
     con_count: int
     created_by: Optional[str] = None
@@ -58,7 +58,7 @@ class ArgumentResponse(BaseModel):
 
 class TopicDetailResponse(BaseModel):
     id: int
-    question: str
+    proposition: str
     pro_arguments: List[ArgumentResponse]
     con_arguments: List[ArgumentResponse]
     overall_summary: Optional[str] = None
@@ -110,3 +110,17 @@ class CommentResponse(BaseModel):
     argument_id: int
     comment: str
     created_at: str
+
+class PropositionValidateRequest(BaseModel):
+    proposition: str
+
+class PropositionSuggestion(BaseModel):
+    proposition: str
+    type: str  # "policy" | "value" | "fact"
+
+class PropositionValidationResponse(BaseModel):
+    original_input: str
+    is_valid: bool
+    rejection_reason: Optional[str]
+    interpretation: Optional[str]
+    suggestions: List[PropositionSuggestion]
