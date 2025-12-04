@@ -17,7 +17,7 @@ async def validate_proposition_endpoint(request: PropositionValidateRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to validate proposition: {str(e)}")
 
-@router.post("", response_model=TopicResponse, status_code=201)
+@router.post("", response_model=TopicResponse, status_code=201, tags=["topics"])
 async def create_topic(topic: TopicCreate):
     """Create a new debate topic."""
     try:
