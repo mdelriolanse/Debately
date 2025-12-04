@@ -35,10 +35,6 @@ async def create_topic(topic: TopicCreate):
             created_at=topic_data.get('created_at')
         )
 
-
-        
-
-        
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create topic: {str(e)}")
 

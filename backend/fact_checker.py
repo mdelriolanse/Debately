@@ -1,12 +1,15 @@
 import os
 import json
 import re
+import logging
 from pathlib import Path
 from typing import Dict, List, Optional
 from anthropic import Anthropic
 from tavily import TavilyClient
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 # Load .env file from the backend directory (works in both local and Docker)
 env_path = Path(__file__).parent / '.env'
@@ -51,6 +54,9 @@ def extract_core_claim(title: str, content: str, debate_proposition: str) -> str
     Returns:
         Extracted claim in 2 sentences or less
     """
+    # Log the inputs to debug issues
+    logger.info(f"extract_core_claim called with - Title: '{title}', Content: '{content}', Proposition: '{debate_proposition}'")
+    
     prompt = f"""You are analyzing an argument in a debate about: {debate_proposition}
 
 Extract the core verifiable claim from this argument. Focus on factual statements that can be researched and verified, not opinions or rhetoric.
@@ -58,9 +64,11 @@ Extract the core verifiable claim from this argument. Focus on factual statement
 Title: {title}
 Content: {content}
 
+CRITICAL: You must extract a claim that is DIRECTLY based on the Title and Content provided above. Do NOT invent or hallucinate claims that are not present in the input. If the input is nonsensical, random text, or contains no meaningful content, return "NO VERIFIABLE FACTUAL CLAIMS".
+
 Return ONLY the core factual claim in 2 sentences or less. Remove all opinion, rhetoric, and emotional language. Focus on what can be factually verified related to the debate topic.
 
-If the argument contains no verifiable factual claims (only opinions, insults, or emotional statements), return "NO VERIFIABLE FACTUAL CLAIMS"."""
+If the argument contains no verifiable factual claims (only opinions, insults, emotional statements, or nonsensical text), return "NO VERIFIABLE FACTUAL CLAIMS"."""
 
     try:
         message = claude_client.messages.create(
@@ -75,6 +83,7 @@ If the argument contains no verifiable factual claims (only opinions, insults, o
         )
         
         claim = message.content[0].text.strip()
+        logger.info(f"Extracted claim: '{claim}'")
         return claim
         
     except Exception as e:
@@ -105,6 +114,10 @@ def search_for_evidence(claim: str) -> List[Dict]:
             results = response
         else:
             results = []
+        
+        logger.info(f"Search returned {len(results)} results")
+        if results:
+            logger.info(f"First result title: '{results[0].get('title', 'N/A')}'")
         
         return results
         
@@ -174,19 +187,22 @@ An argument is IRRELEVANT if it:
 - Contains no factual claims (only opinions like "this sucks" or "you guys are wrong")
 - Makes claims unrelated to the debate topic
 - Is just insults, rhetoric, or emotional statements
+- Contains nonsensical or random text with no meaning
 
 If IRRELEVANT:
 - Set is_relevant to false
 - Set validity_score to 1
-- Provide reasoning explaining why it's irrelevant
+- Provide reasoning explaining why it's irrelevant. Be specific about what makes it irrelevant.
 
 If RELEVANT:
 - Set is_relevant to true
 - Verify whether the factual claims supporting their position are true
 - Score based on evidence quality (1-5 stars)
 
-ORIGINAL CLAIM:
+ORIGINAL CLAIM TO VERIFY:
 {original_claim}
+
+CRITICAL: Your reasoning must be about the ORIGINAL CLAIM above. Do NOT write reasoning about claims that are not in the ORIGINAL CLAIM. If the search results don't match the original claim, state that clearly.
 
 SEARCH RESULTS (pre-filtered for high-quality sources with relevance score > 0.5):
 {formatted_results}
@@ -386,6 +402,8 @@ def verify_argument(title: str, content: str, debate_proposition: str) -> Validi
     Returns:
         ValidityVerdict with fact-checking results
     """
+    logger.info(f"verify_argument called with - Title: '{title}', Content: '{content}', Proposition: '{debate_proposition}'")
+    
     try:
         # Step 1: Extract core claim
         claim = extract_core_claim(title, content, debate_proposition)
@@ -409,8 +427,6 @@ def verify_argument(title: str, content: str, debate_proposition: str) -> Validi
             if r.get('score', 0) > 0.5
         ]
         
-        # Sort by score (highest first) and take top 3
-        filtered_results.sort(key=lambda x: x.get('score', 0), reverse=True)
         top_sources = filtered_results[:3]
         
         # If no sources pass the threshold, return low validity score (but still relevant if it has claims)

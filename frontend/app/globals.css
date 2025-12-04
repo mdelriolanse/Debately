@@ -29,7 +29,7 @@
   --destructive-foreground: #ffffff;
   --border: #2a2a2a;
   --input: #2a2a2a;
-  --ring: #8b5cf6;
+  --ring: rgba(255, 255, 255, 0.5);
   --pro-accent: #22c55e;
   --con-accent: #f43f5e;
   --ai-accent: #8b5cf6;
@@ -296,8 +296,8 @@
   .btn-comment {
     position: relative;
     overflow: hidden;
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(99, 102, 241, 0.1) 100%);
-    border: 1px solid rgba(139, 92, 246, 0.2);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.15);
     transition: all 0.3s ease;
   }
 
@@ -305,15 +305,15 @@
     content: "";
     position: absolute;
     inset: 0;
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(99, 102, 241, 0.2) 50%, rgba(168, 85, 247, 0.2) 100%);
+    background: rgba(255, 255, 255, 0.1);
     opacity: 0;
     transition: opacity 0.3s ease;
     pointer-events: none;
   }
 
   .btn-comment:hover {
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(99, 102, 241, 0.15) 100%);
-    border-color: rgba(139, 92, 246, 0.4);
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.3);
     transform: translateY(-0.0625rem);
   }
 

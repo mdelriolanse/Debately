@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { ShaderBackground } from '@/components/ShaderBackground'
+import { AuroraBackground } from '@/components/AuroraBackground'
 import { Users, Brain, Scale, Sparkles, ArrowLeft, Plus, X, Loader2, Star, ArrowUp, ArrowDown, MessageSquare, Send, Search } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
@@ -27,8 +27,30 @@ import {
   type PropositionSuggestion
 } from '@/src/api'
 
+// Bank of example propositions for the Create New Debate page
+const PROPOSITION_EXAMPLES = [
+  "Universal basic income would reduce poverty.",
+  "Remote work should be the default for office jobs.",
+  "Social media has done more harm than good to society.",
+  "Nuclear energy is essential for addressing climate change.",
+  "Artificial intelligence will create more jobs than it eliminates.",
+  "College education should be free for all citizens.",
+  "Standardized testing is an ineffective measure of student ability.",
+  "Space exploration funding should be increased significantly.",
+  "Cryptocurrencies will eventually replace traditional currencies.",
+  "Zoos are unethical and should be abolished.",
+  "Voting should be mandatory for all eligible citizens.",
+  "Genetically modified foods are safe for human consumption.",
+  "The minimum wage should be raised to a living wage.",
+  "Video games contribute to violent behavior in youth.",
+  "Single-payer healthcare would improve outcomes in the United States."
+]
+
 export default function Home() {
   const [view, setView] = useState<'landing' | 'browse' | 'topic' | 'createDebate'>('landing')
+  
+  // Random proposition example for the create debate form
+  const [propositionExample, setPropositionExample] = useState<string>('')
   const [topics, setTopics] = useState<TopicListItem[]>([])
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [selectedTopic, setSelectedTopic] = useState<TopicDetailResponse | null>(null)
@@ -70,7 +92,7 @@ export default function Home() {
     isValidating: false
   })
   const [selectedProposition, setSelectedProposition] = useState<string | null>(null)
-  const [validationInput, setValidationInput] = useState<string>('')
+  const [validationInput, setValidationInput] = useState<string | null>(null)
 
   // Helper function to extract domain from URL
   const getDomain = (url: string): string => {
@@ -130,6 +152,8 @@ export default function Home() {
   const handleStartDebate = () => {
     setView('createDebate')
     setError(null)
+    // Select a random proposition example
+    setPropositionExample(PROPOSITION_EXAMPLES[Math.floor(Math.random() * PROPOSITION_EXAMPLES.length)])
   }
 
   const handleBrowseTopics = () => {
@@ -213,13 +237,10 @@ export default function Home() {
     }
   }
 
-  const handleSelectSuggestion = async (suggestion: PropositionSuggestion) => {
-    // Set selected proposition and proceed to topic creation
+  const handleSelectSuggestion = (suggestion: PropositionSuggestion) => {
+    // Set selected proposition - UI will now show confirmed state with argument sections
     setSelectedProposition(suggestion.proposition)
     setValidationState(prev => ({ ...prev, showSuggestions: false }))
-    
-    // Automatically trigger topic creation
-    await handleCreateTopicWithProposition(suggestion.proposition)
   }
 
   const handleTryAgain = async (newInput: string) => {
@@ -230,15 +251,12 @@ export default function Home() {
     await handleValidateProposition(newInput)
   }
 
-  const handleContinueWithOriginal = async () => {
+  const handleContinueWithOriginal = () => {
     if (!validationState.result) return
     
-    // Use original input as selected proposition
+    // Use original input as selected proposition - UI will now show confirmed state with argument sections
     setSelectedProposition(validationState.result.original_input)
     setValidationState(prev => ({ ...prev, showSuggestions: false }))
-    
-    // Proceed to topic creation
-    await handleCreateTopicWithProposition(validationState.result.original_input)
   }
 
   const handleCancelValidation = () => {
@@ -520,7 +538,7 @@ export default function Home() {
       <div className="relative min-h-screen overflow-hidden text-text-primary">
         <div className="fixed inset-0 bg-bg-primary -z-10" />
         <div className="fixed inset-0" style={{ zIndex: 0 }}>
-          <ShaderBackground className="w-full h-full pointer-events-none" introDuration={2.5} />
+          <AuroraBackground />
         </div>
         <motion.div
           initial={{ opacity: 0 }}
@@ -532,7 +550,8 @@ export default function Home() {
         
         <div className="relative z-10 pt-32 pb-20 px-6 max-w-7xl mx-auto">
           <Button 
-            className="btn-primary mb-8"
+            variant="outline"
+            className="mb-8 rounded-full border-white/20 hover:bg-white/10 hover:text-white text-text-secondary"
             onClick={handleBackFromCreate}
             disabled={loading}
           >
@@ -563,162 +582,182 @@ export default function Home() {
             onSubmit={handleSubmitDebate}
             className="space-y-8"
           >
-            {/* Topic Title */}
-            <Card className="glass-panel p-8">
-              <label className="block mb-3 text-lg font-semibold">Debate Topic</label>
-              <Input
-                required
-                value={newDebateForm.title}
-                onChange={(e) => setNewDebateForm(prev => ({ ...prev, title: e.target.value }))}
-                placeholder="e.g., Should remote work be the default?"
-                className="bg-black border-gray-700 text-white text-lg py-6"
-              />
-              <p className="text-sm text-text-tertiary mt-2">Frame as a clear question that has multiple valid perspectives</p>
-            </Card>
+            {/* Proposition Section */}
+            {selectedProposition ? (
+              /* Confirmed Proposition - Read Only */
+              <Card className="glass-panel p-8 border-2 border-green-500/30">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-3 h-3 rounded-full bg-green-500" />
+                  <span className="text-green-400 font-semibold text-sm uppercase tracking-wider">Confirmed Proposition</span>
+                </div>
+                <p className="text-xl text-text-primary">{selectedProposition}</p>
+              </Card>
+            ) : (
+              /* Editable Proposition Input */
+              <Card className="glass-panel p-8">
+                <label className="block mb-3 text-lg font-semibold">Write a statement that takes a position.</label>
+                <Input
+                  required
+                  value={newDebateForm.title}
+                  onChange={(e) => setNewDebateForm(prev => ({ ...prev, title: e.target.value }))}
+                  placeholder={propositionExample ? `e.g., ${propositionExample}` : 'e.g., Universal basic income would reduce poverty.'}
+                  className="bg-black border-gray-700 text-white text-lg py-6"
+                  disabled={validationState.showSuggestions || validationState.isValidating}
+                />
+              </Card>
+            )}
 
-            <div className="grid md:grid-cols-2 gap-6">
-              {/* Pro Arguments Column */}
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <div className="w-1 h-6 bg-green-500 rounded-full" />
-                    <h3 className="text-xl font-semibold text-green-500">Pro Arguments</h3>
+            {/* Pro/Con Arguments - Only show after proposition is confirmed */}
+            {selectedProposition && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5 }}
+                className="grid md:grid-cols-2 gap-6"
+              >
+                {/* Pro Arguments Column */}
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-1 h-6 bg-green-500 rounded-full" />
+                      <h3 className="text-xl font-semibold text-green-500">Pro Arguments</h3>
+                    </div>
+                    <Button 
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleAddProArg}
+                      className="border-green-500/30 hover:bg-green-950/30 text-green-500"
+                    >
+                      <Plus className="w-4 h-4 mr-1" />
+                      Add
+                    </Button>
                   </div>
-                  <Button 
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={handleAddProArg}
-                    className="border-green-500/30 hover:bg-green-950/30 text-green-500"
-                  >
-                    <Plus className="w-4 h-4 mr-1" />
-                    Add
-                  </Button>
-                </div>
 
-                <div className="space-y-4">
-                  {newDebateForm.proArgs.map((arg, index) => (
-                    <Card key={index} className="glass-panel p-6">
-                      <div className="flex justify-between items-start mb-3">
-                        <label className="text-sm font-medium text-green-400">Argument {index + 1}</label>
-                        {newDebateForm.proArgs.length > 1 && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleRemoveProArg(index)}
-                            className="text-text-tertiary hover:text-accent-error h-auto p-1"
-                          >
-                            <X className="w-4 h-4" />
-                          </Button>
-                        )}
-                      </div>
-                      <Input
-                        value={arg.title}
-                        onChange={(e) => {
-                          const newProArgs = [...newDebateForm.proArgs]
-                          newProArgs[index].title = e.target.value
-                          setNewDebateForm(prev => ({ ...prev, proArgs: newProArgs }))
-                        }}
-                        placeholder="Argument title..."
-                        className="mb-3"
-                      />
-                      <Textarea
-                        value={arg.content}
-                        onChange={(e) => {
-                          const newProArgs = [...newDebateForm.proArgs]
-                          newProArgs[index].content = e.target.value
-                          setNewDebateForm(prev => ({ ...prev, proArgs: newProArgs }))
-                        }}
-                        placeholder="Describe the pro argument..."
-                        className="bg-black/50 border-green-800/30 text-white mb-3 min-h-[100px]"
-                      />
-                      <Input
-                        value={arg.sources}
-                        onChange={(e) => {
-                          const newProArgs = [...newDebateForm.proArgs]
-                          newProArgs[index].sources = e.target.value
-                          setNewDebateForm(prev => ({ ...prev, proArgs: newProArgs }))
-                        }}
-                        placeholder="Sources (optional)"
-                        className="bg-black/50 border-green-800/30 text-white"
-                      />
-                    </Card>
-                  ))}
-                </div>
-              </div>
-
-              {/* Con Arguments Column */}
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <div className="w-1 h-6 bg-rose-500 rounded-full" />
-                    <h3 className="text-xl font-semibold text-rose-500">Con Arguments</h3>
+                  <div className="space-y-4">
+                    {newDebateForm.proArgs.map((arg, index) => (
+                      <Card key={index} className="glass-panel p-6">
+                        <div className="flex justify-between items-start mb-3">
+                          <label className="text-sm font-medium text-green-400">Argument {index + 1}</label>
+                          {newDebateForm.proArgs.length > 1 && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleRemoveProArg(index)}
+                              className="text-text-tertiary hover:text-accent-error h-auto p-1"
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
+                        <Input
+                          value={arg.title}
+                          onChange={(e) => {
+                            const newProArgs = [...newDebateForm.proArgs]
+                            newProArgs[index].title = e.target.value
+                            setNewDebateForm(prev => ({ ...prev, proArgs: newProArgs }))
+                          }}
+                          placeholder="Argument title..."
+                          className="mb-3"
+                        />
+                        <Textarea
+                          value={arg.content}
+                          onChange={(e) => {
+                            const newProArgs = [...newDebateForm.proArgs]
+                            newProArgs[index].content = e.target.value
+                            setNewDebateForm(prev => ({ ...prev, proArgs: newProArgs }))
+                          }}
+                          placeholder="Describe the pro argument..."
+                          className="bg-black/50 border-green-800/30 text-white mb-3 min-h-[100px]"
+                        />
+                        <Input
+                          value={arg.sources}
+                          onChange={(e) => {
+                            const newProArgs = [...newDebateForm.proArgs]
+                            newProArgs[index].sources = e.target.value
+                            setNewDebateForm(prev => ({ ...prev, proArgs: newProArgs }))
+                          }}
+                          placeholder="Sources (optional)"
+                          className="bg-black/50 border-green-800/30 text-white"
+                        />
+                      </Card>
+                    ))}
                   </div>
-                  <Button 
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={handleAddConArg}
-                    className="border-rose-500/30 hover:bg-rose-950/30 text-rose-500"
-                  >
-                    <Plus className="w-4 h-4 mr-1" />
-                    Add
-                  </Button>
                 </div>
 
-                <div className="space-y-4">
-                  {newDebateForm.conArgs.map((arg, index) => (
-                    <Card key={index} className="glass-panel p-6">
-                      <div className="flex justify-between items-start mb-3">
-                        <label className="text-sm font-medium text-rose-400">Argument {index + 1}</label>
-                        {newDebateForm.conArgs.length > 1 && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleRemoveConArg(index)}
-                            className="text-text-tertiary hover:text-accent-error h-auto p-1"
-                          >
-                            <X className="w-4 h-4" />
-                          </Button>
-                        )}
-                      </div>
-                      <Input
-                        value={arg.title}
-                        onChange={(e) => {
-                          const newConArgs = [...newDebateForm.conArgs]
-                          newConArgs[index].title = e.target.value
-                          setNewDebateForm(prev => ({ ...prev, conArgs: newConArgs }))
-                        }}
-                        placeholder="Argument title..."
-                        className="mb-3"
-                      />
-                      <Textarea
-                        value={arg.content}
-                        onChange={(e) => {
-                          const newConArgs = [...newDebateForm.conArgs]
-                          newConArgs[index].content = e.target.value
-                          setNewDebateForm(prev => ({ ...prev, conArgs: newConArgs }))
-                        }}
-                        placeholder="Describe the con argument..."
-                        className="bg-black/50 border-rose-800/30 text-white mb-3 min-h-[100px]"
-                      />
-                      <Input
-                        value={arg.sources}
-                        onChange={(e) => {
-                          const newConArgs = [...newDebateForm.conArgs]
-                          newConArgs[index].sources = e.target.value
-                          setNewDebateForm(prev => ({ ...prev, conArgs: newConArgs }))
-                        }}
-                        placeholder="Sources (optional)"
-                        className="bg-black/50 border-rose-800/30 text-white"
-                      />
-                    </Card>
-                  ))}
+                {/* Con Arguments Column */}
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-1 h-6 bg-rose-500 rounded-full" />
+                      <h3 className="text-xl font-semibold text-rose-500">Con Arguments</h3>
+                    </div>
+                    <Button 
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleAddConArg}
+                      className="border-rose-500/30 hover:bg-rose-950/30 text-rose-500"
+                    >
+                      <Plus className="w-4 h-4 mr-1" />
+                      Add
+                    </Button>
+                  </div>
+
+                  <div className="space-y-4">
+                    {newDebateForm.conArgs.map((arg, index) => (
+                      <Card key={index} className="glass-panel p-6">
+                        <div className="flex justify-between items-start mb-3">
+                          <label className="text-sm font-medium text-rose-400">Argument {index + 1}</label>
+                          {newDebateForm.conArgs.length > 1 && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleRemoveConArg(index)}
+                              className="text-text-tertiary hover:text-accent-error h-auto p-1"
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
+                        <Input
+                          value={arg.title}
+                          onChange={(e) => {
+                            const newConArgs = [...newDebateForm.conArgs]
+                            newConArgs[index].title = e.target.value
+                            setNewDebateForm(prev => ({ ...prev, conArgs: newConArgs }))
+                          }}
+                          placeholder="Argument title..."
+                          className="mb-3"
+                        />
+                        <Textarea
+                          value={arg.content}
+                          onChange={(e) => {
+                            const newConArgs = [...newDebateForm.conArgs]
+                            newConArgs[index].content = e.target.value
+                            setNewDebateForm(prev => ({ ...prev, conArgs: newConArgs }))
+                          }}
+                          placeholder="Describe the con argument..."
+                          className="bg-black/50 border-rose-800/30 text-white mb-3 min-h-[100px]"
+                        />
+                        <Input
+                          value={arg.sources}
+                          onChange={(e) => {
+                            const newConArgs = [...newDebateForm.conArgs]
+                            newConArgs[index].sources = e.target.value
+                            setNewDebateForm(prev => ({ ...prev, conArgs: newConArgs }))
+                          }}
+                          placeholder="Sources (optional)"
+                          className="bg-black/50 border-rose-800/30 text-white"
+                        />
+                      </Card>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            </div>
+              </motion.div>
+            )}
 
             {/* Validation UI */}
             {validationState.showSuggestions && validationState.result && (
@@ -814,15 +853,15 @@ export default function Home() {
                         <label className="block text-sm font-semibold mb-2">Try Again:</label>
                         <div className="flex gap-2">
                           <Input
-                            value={validationInput || validationState.result.original_input}
+                            value={validationInput ?? validationState.result.original_input}
                             onChange={(e) => setValidationInput(e.target.value)}
                             placeholder="Enter a new proposition..."
                             className="flex-1 bg-black/50 border-gray-700 text-white"
                             disabled={loading || validationState.isValidating}
                           />
                           <Button
-                            onClick={() => handleTryAgain(validationInput || validationState.result.original_input)}
-                            disabled={loading || validationState.isValidating || !(validationInput || validationState.result.original_input).trim()}
+                            onClick={() => handleTryAgain(validationInput ?? validationState.result.original_input)}
+                            disabled={loading || validationState.isValidating || !(validationInput ?? validationState.result.original_input).trim()}
                             variant="outline"
                           >
                             {validationState.isValidating ? (
@@ -900,7 +939,7 @@ export default function Home() {
                     Creating...
                   </>
                 ) : (
-                  'Create Debate'
+                  'Continue'
                 )}
               </Button>
             </div>
@@ -915,7 +954,7 @@ export default function Home() {
       <div className="relative min-h-screen overflow-hidden text-text-primary">
         <div className="fixed inset-0 bg-bg-primary -z-10" />
         <div className="fixed inset-0" style={{ zIndex: 0 }}>
-          <ShaderBackground className="w-full h-full pointer-events-none" introDuration={2.5} />
+          <AuroraBackground />
         </div>
         <motion.div
           initial={{ opacity: 0 }}
@@ -927,7 +966,8 @@ export default function Home() {
         
         <div className="relative z-10 pt-32 pb-20 px-6 max-w-7xl mx-auto">
           <Button 
-            className="btn-primary mb-8"
+            variant="outline"
+            className="mb-8 rounded-full border-white/20 hover:bg-white/10 hover:text-white text-text-secondary"
             onClick={handleBackToLanding}
             disabled={loading}
           >
@@ -1131,9 +1171,9 @@ export default function Home() {
         <div className="relative min-h-screen overflow-hidden text-text-primary flex flex-col items-center justify-center gap-4">
           <div className="fixed inset-0 bg-bg-primary -z-10" />
           <div className="fixed inset-0" style={{ zIndex: 0 }}>
-            <ShaderBackground className="w-full h-full pointer-events-none" introDuration={2.5} />
+            <AuroraBackground />
           </div>
-          <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
+          <Loader2 className="w-8 h-8 animate-spin text-white" />
           <p className="text-text-secondary text-lg">Verifying arguments and generating analysis...</p>
           <p className="text-text-tertiary text-sm">This may take 30-60 seconds on first load</p>
         </div>
@@ -1146,8 +1186,8 @@ export default function Home() {
           <div className="fixed inset-0 bg-bg-primary -z-10" />
           <div className="relative z-10 pt-32 pb-20 px-6 max-w-7xl mx-auto">
             <Button 
-              variant="ghost" 
-              className="text-text-tertiary hover:text-white mb-8"
+              variant="outline" 
+              className="mb-8 rounded-full border-white/20 hover:bg-white/10 hover:text-white text-text-secondary"
               onClick={handleBackToBrowse}
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
@@ -1165,7 +1205,7 @@ export default function Home() {
       <div className="relative min-h-screen overflow-hidden text-text-primary">
         <div className="fixed inset-0 bg-bg-primary -z-10" />
         <div className="fixed inset-0" style={{ zIndex: 0 }}>
-          <ShaderBackground className="w-full h-full pointer-events-none" introDuration={2.5} />
+          <AuroraBackground />
         </div>
         <motion.div
           initial={{ opacity: 0 }}
@@ -1177,8 +1217,8 @@ export default function Home() {
         
         <div className="relative z-10 pt-32 pb-20 px-6 max-w-7xl mx-auto">
           <Button 
-            variant="ghost" 
-            className="text-text-tertiary hover:text-white mb-8"
+            variant="outline" 
+            className="mb-8 rounded-full border-white/20 hover:bg-white/10 hover:text-white text-text-secondary"
             onClick={handleBackToBrowse}
             disabled={loading}
           >
@@ -1828,7 +1868,7 @@ export default function Home() {
             
             {loading && !selectedTopic.overall_summary ? (
               <div className="flex items-center gap-2 text-purple-400">
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="w-4 h-4 animate-spin text-white" />
                 <span>Generating analysis...</span>
               </div>
             ) : selectedTopic.overall_summary ? (
@@ -1880,7 +1920,7 @@ export default function Home() {
       
       {/* Shader Background */}
       <div className="fixed inset-0" style={{ zIndex: 0 }}>
-        <ShaderBackground className="w-full h-full pointer-events-none" introDuration={2.5} />
+        <AuroraBackground />
       </div>
       
       {/* Gradient Overlay */}

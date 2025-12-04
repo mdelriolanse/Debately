@@ -33,12 +33,17 @@ async def create_argument(topic_id: int, argument: ArgumentCreate):
     # a single pro OR con and grow naturally.
     
     try:
+        # Log the exact data being sent to fact checker
+        logger.info(f"Fact-checking argument - Title: '{argument.title}', Content: '{argument.content}', Proposition: '{topic['proposition']}'")
+        
         # Run fact-checker to verify relevance before saving
         verdict = fact_checker.verify_argument(
             title=argument.title,
             content=argument.content,
             debate_proposition=topic['proposition']
         )
+        
+        logger.info(f"Fact-checker returned - is_relevant: {verdict.is_relevant}, validity_score: {verdict.validity_score}, reasoning: '{verdict.reasoning[:100]}...'")
         
         # Reject irrelevant arguments
         if not verdict.is_relevant:
