@@ -14,11 +14,11 @@ load_dotenv(dotenv_path=env_path)
 
 # Database connection parameters from environment variables
 # Default values are sample/placeholder - use .env file for real values
-DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_HOST = os.getenv("DB_HOST") 
 DB_PORT = os.getenv("DB_PORT", "5432")
-DB_NAME = os.getenv("DB_NAME", "debate_platform")
+DB_NAME = os.getenv("DB_NAME", "postgres")
 DB_USER = os.getenv("DB_USER", "postgres")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
 
 def get_db_connection():
     """Get a database connection."""
@@ -27,7 +27,9 @@ def get_db_connection():
         port=DB_PORT,
         database=DB_NAME,
         user=DB_USER,
-        password=DB_PASSWORD
+        password=DB_PASSWORD,
+        sslmode='require',
+        connect_timeout=10
     )
     return conn
 

@@ -7,7 +7,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { AuroraBackground } from '@/components/AuroraBackground'
 import { ArrowLeft, Plus, X, Loader2, Star, ArrowUp, ArrowDown, MessageSquare, Send, Brain } from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
-import { motion } from 'framer-motion'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { 
@@ -247,10 +246,7 @@ export default function TopicPage() {
       <div className="fixed inset-0" style={{ zIndex: 0 }}>
         <AuroraBackground />
       </div>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 1, delay: 1.5, ease: "easeOut" }}
+      <div
         className="fixed inset-0 bg-gradient-to-b from-black/50 via-black/30 to-black/60 pointer-events-none"
         style={{ zIndex: 1 }}
       />
@@ -303,12 +299,7 @@ export default function TopicPage() {
           </div>
         )}
 
-        <motion.div
-          initial={{ opacity: 0, y: 40 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1, ease: [0.16, 1, 0.3, 1], delay: 2 }}
-          className="mb-12"
-        >
+        <div className="mb-12">
           <div className="flex items-center gap-3 mb-4">
             <span className="font-mono text-sm text-text-tertiary uppercase tracking-[0.3em]">Topic</span>
           </div>
@@ -316,7 +307,7 @@ export default function TopicPage() {
             <h1 className="text-[clamp(2rem,4vw,3.5rem)] font-light leading-tight tracking-[-0.04em]">{selectedTopic.proposition}</h1>
             <p className="text-sm text-text-tertiary mt-2">Arguments sorted by validity (highest quality first)</p>
           </div>
-        </motion.div>
+        </div>
 
         <div ref={containerRef} className="relative grid md:grid-cols-2 gap-6 mb-8">
           {/* Pro Column */}
@@ -883,11 +874,7 @@ export default function TopicPage() {
         </div>
 
         {/* AI Analysis Section */}
-        <motion.div
-          initial={{ opacity: 0, y: 40 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1, ease: [0.16, 1, 0.3, 1], delay: 2.3 }}
-        >
+        <div>
         <Card className="glass-panel p-8">
           <div className="flex items-center gap-3 mb-4">
             <Brain className="w-6 h-6 text-purple-400" />
@@ -938,7 +925,7 @@ export default function TopicPage() {
             </div>
           )}
         </Card>
-        </motion.div>
+        </div>
       </div>
     </div>
   )

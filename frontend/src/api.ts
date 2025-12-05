@@ -3,7 +3,7 @@
  * Base URL: http://localhost:8000
  */
 
-const API_BASE_URL = 'http://localhost:8080';
+const API_BASE_URL = 'http://localhost:8000';
 
 // Types matching backend models
 export interface TopicCreate {
@@ -120,7 +120,22 @@ async function handleResponse<T>(response: Response): Promise<T> {
     const errorData = await response.json().catch(() => ({ detail: response.statusText }));
     // Extract the detail object - it might be nested or flat
     const detail = errorData.detail || errorData;
-    const errorMessage = typeof detail === 'string' ? detail : (detail.message || detail.error || `HTTP error! status: ${response.status}`);
+    
+    // Handle FastAPI validation errors (422) - they come as an array of field errors
+    let errorMessage: string;
+    if (Array.isArray(detail)) {
+      // Format validation errors nicely
+      const fieldErrors = detail.map((err: any) => {
+        const field = err.loc ? err.loc.join('.') : 'field';
+        return `${field}: ${err.msg}`;
+      }).join(', ');
+      errorMessage = `Validation error: ${fieldErrors}`;
+    } else if (typeof detail === 'string') {
+      errorMessage = detail;
+    } else {
+      errorMessage = detail.message || detail.error || `HTTP error! status: ${response.status}`;
+    }
+    
     const error: any = new Error(errorMessage);
     error.status = response.status;
     error.response = { data: { detail: detail }, status: response.status };

@@ -126,9 +126,30 @@ async def health_check():
         return {"status": "healthy", "database": "connected"}
     except Exception as e:
         logger.error(f"Health check failed: {e}")
+        error_detail = str(e)
+        # Include more diagnostic info in response
+        # Get diagnostic info
+        import os
+        from pathlib import Path
+        from dotenv import load_dotenv
+        env_path = Path(__file__).parent.parent / 'backend' / '.env'
+        load_dotenv(dotenv_path=env_path)
+        
         return JSONResponse(
             status_code=503,
-            content={"status": "unhealthy", "database": "disconnected", "error": str(e)}
+            content={
+                "status": "unhealthy", 
+                "database": "disconnected", 
+                "error": error_detail,
+                "diagnostics": {
+                    "db_host_set": bool(os.getenv("DB_HOST")),
+                    "db_user_set": bool(os.getenv("DB_USER")),
+                    "db_password_set": bool(os.getenv("DB_PASSWORD")),
+                    "db_name": os.getenv("DB_NAME", "postgres"),
+                    "db_port": os.getenv("DB_PORT", "5432"),
+                    "env_file_exists": env_path.exists()
+                }
+            }
         )
 
 if __name__ == "__main__":

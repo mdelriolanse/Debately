@@ -6,7 +6,6 @@ import { Input } from '@/components/ui/input'
 import { AuroraBackground } from '@/components/AuroraBackground'
 import { ArrowLeft, Plus, Loader2, Star, Brain, Search } from 'lucide-react'
 import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { 
@@ -45,10 +44,7 @@ export default function BrowsePage() {
       <div className="fixed inset-0" style={{ zIndex: 0 }}>
         <AuroraBackground />
       </div>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 1, delay: 1.5, ease: "easeOut" }}
+      <div
         className="fixed inset-0 bg-gradient-to-b from-black/50 via-black/30 to-black/60 pointer-events-none"
         style={{ zIndex: 1 }}
       />
@@ -65,12 +61,7 @@ export default function BrowsePage() {
           </Button>
         </Link>
 
-        <motion.div
-          initial={{ opacity: 0, y: 40 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1, ease: [0.16, 1, 0.3, 1], delay: 2 }}
-          className="flex justify-between items-center mb-12"
-        >
+        <div className="flex justify-between items-center mb-12">
           <div>
             <h1 className="text-[clamp(2rem,4vw,3.5rem)] font-light leading-tight tracking-[-0.04em] mb-4">Browse Topics</h1>
             <p className="text-text-secondary text-lg">Explore ongoing debates and contribute your perspective</p>
@@ -81,7 +72,7 @@ export default function BrowsePage() {
               New Topic
             </Button>
           </Link>
-        </motion.div>
+        </div>
 
         {error && (
           <Card className="glass-panel border-accent-error/30 bg-accent-error/10 p-4 mb-6">
@@ -90,12 +81,7 @@ export default function BrowsePage() {
         )}
 
         {/* Search Input */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1], delay: 2.2 }}
-          className="mb-8"
-        >
+        <div className="mb-8">
           <div className="relative">
             <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-text-tertiary pointer-events-none z-10" />
             <Input
@@ -106,7 +92,7 @@ export default function BrowsePage() {
               className="pl-12 py-6 text-lg bg-black/50 border-white/20 focus-visible:ring-white/30 relative z-0"
             />
           </div>
-        </motion.div>
+        </div>
 
         {loading ? (
           <div className="flex items-center justify-center py-20">
@@ -150,19 +136,9 @@ export default function BrowsePage() {
           }
 
           return (
-            <motion.div
-              initial={{ opacity: 0, y: 40 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 1, ease: [0.16, 1, 0.3, 1], delay: 2.3 }}
-              className="space-y-6"
-            >
+            <div className="space-y-6">
               {filteredTopics.map((topic, index) => (
-              <motion.div
-                key={topic.id}
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, delay: 2.4 + 0.1 * index, ease: [0.16, 1, 0.3, 1] }}
-              >
+              <div key={topic.id}>
                 <Card 
                   className="card card-hover p-8 cursor-pointer"
                   onClick={() => router.push(`/topic/${topic.id}`)}
@@ -243,9 +219,9 @@ export default function BrowsePage() {
                   )}
                 </div>
               </Card>
-              </motion.div>
+              </div>
               ))}
-            </motion.div>
+            </div>
           )
         })()}
       </div>

@@ -7,7 +7,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { AuroraBackground } from '@/components/AuroraBackground'
 import { ArrowLeft, Plus, X, Loader2 } from 'lucide-react'
 import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { 
@@ -164,16 +163,26 @@ export default function NewDebatePage() {
     setError(null)
 
     try {
+      // Validate proposition is not empty
+      if (!proposition || !proposition.trim()) {
+        throw new Error('Proposition cannot be empty')
+      }
+
       // Validate that we have at least one argument total (either pro or con)
       if ((newDebateForm.proArgs.length === 0 || newDebateForm.proArgs.every(a => !a.title.trim() && !a.content.trim()))
           && (newDebateForm.conArgs.length === 0 || newDebateForm.conArgs.every(a => !a.title.trim() && !a.content.trim()))) {
         throw new Error('Please provide at least one pro or con argument')
       }
 
+      // Validate created_by is not empty
+      if (!newDebateForm.createdBy || !newDebateForm.createdBy.trim()) {
+        throw new Error('Author name cannot be empty')
+      }
+
       // Create the topic with the selected proposition
       const topicResponse = await createTopic({
-        proposition,
-        created_by: newDebateForm.createdBy
+        proposition: proposition.trim(),
+        created_by: newDebateForm.createdBy.trim()
       })
 
       const topicId = topicResponse.topic_id
@@ -181,8 +190,7 @@ export default function NewDebatePage() {
       // Create pro arguments
       for (const arg of newDebateForm.proArgs) {
         if (arg.title.trim() && arg.content.trim()) {
-          await createArgument({
-            topic_id: topicId,
+          await createArgument(topicId, {
             title: arg.title,
             content: arg.content,
             sources: arg.sources || undefined,
@@ -195,8 +203,7 @@ export default function NewDebatePage() {
       // Create con arguments
       for (const arg of newDebateForm.conArgs) {
         if (arg.title.trim() && arg.content.trim()) {
-          await createArgument({
-            topic_id: topicId,
+          await createArgument(topicId, {
             title: arg.title,
             content: arg.content,
             sources: arg.sources || undefined,
@@ -260,10 +267,7 @@ export default function NewDebatePage() {
       <div className="fixed inset-0" style={{ zIndex: 0 }}>
         <AuroraBackground />
       </div>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 1, delay: 1.5, ease: "easeOut" }}
+      <div
         className="fixed inset-0 bg-gradient-to-b from-black/50 via-black/30 to-black/60 pointer-events-none"
         style={{ zIndex: 1 }}
       />
@@ -280,15 +284,10 @@ export default function NewDebatePage() {
           </Button>
         </Link>
 
-        <motion.div
-          initial={{ opacity: 0, y: 40 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1, ease: [0.16, 1, 0.3, 1], delay: 2 }}
-          className="mb-12"
-        >
+        <div className="mb-12">
           <h1 className="text-[clamp(2rem,4vw,3.5rem)] font-light leading-tight tracking-[-0.04em] mb-4">Create New Debate</h1>
           <p className="text-text-secondary text-lg">Start a structured discussion on any topic</p>
-        </motion.div>
+        </div>
 
         {error && (
           <Card className="glass-panel border-accent-error/30 bg-accent-error/10 p-4 mb-6">
@@ -296,10 +295,7 @@ export default function NewDebatePage() {
           </Card>
         )}
 
-        <motion.form
-          initial={{ opacity: 0, y: 40 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1, ease: [0.16, 1, 0.3, 1], delay: 2.3 }}
+        <form
           onSubmit={handleSubmitDebate}
           className="space-y-8"
         >
@@ -330,12 +326,7 @@ export default function NewDebatePage() {
 
           {/* Pro/Con Arguments - Only show after proposition is confirmed */}
           {selectedProposition && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-              className="grid md:grid-cols-2 gap-6"
-            >
+            <div className="grid md:grid-cols-2 gap-6">
               {/* Pro Arguments Column */}
               <div>
                 <div className="flex items-center justify-between mb-4">
@@ -477,17 +468,12 @@ export default function NewDebatePage() {
                   ))}
                 </div>
               </div>
-            </motion.div>
+            </div>
           )}
 
           {/* Validation UI */}
           {validationState.showSuggestions && validationState.result && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
-              className="space-y-6"
-            >
+            <div className="space-y-6">
               <Card className="glass-panel p-6 border-2">
                 {/* Validation Status */}
                 <div className="flex items-center justify-between mb-4">
@@ -634,7 +620,7 @@ export default function NewDebatePage() {
                   </Button>
                 </div>
               </Card>
-            </motion.div>
+            </div>
           )}
 
           {/* Submit Button */}
@@ -668,7 +654,7 @@ export default function NewDebatePage() {
               )}
             </Button>
           </div>
-        </motion.form>
+        </form>
       </div>
     </div>
   )

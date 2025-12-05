@@ -2,7 +2,6 @@
 
 import { Button } from '@/components/ui/button'
 import { AuroraBackground } from '@/components/AuroraBackground'
-import { motion } from 'framer-motion'
 import Link from 'next/link'
 
 export default function Home() {
@@ -17,10 +16,7 @@ export default function Home() {
       </div>
       
       {/* Gradient Overlay */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 1, delay: 1.5, ease: "easeOut" }}
+      <div
         className="fixed inset-0 bg-gradient-to-b from-black/50 via-black/30 to-black/60 pointer-events-none"
         style={{ zIndex: 1 }}
       />
@@ -28,12 +24,7 @@ export default function Home() {
       {/* Hero Section */}
       <main className="relative z-10 pt-32 pb-20 px-6">
         <div className="mx-auto max-w-4xl space-y-16">
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1, ease: [0.16, 1, 0.3, 1], delay: 2 }}
-            className="text-center space-y-6"
-          >
+          <div className="text-center space-y-6">
             <p className="text-xl uppercase tracking-[0.4em] text-text-tertiary">
               Debately
             </p>
@@ -43,14 +34,9 @@ export default function Home() {
             <p className="text-text-secondary text-lg">
               Create topics, contribute arguments, let AI synthesize understanding. The resilient platform for structured debate.
             </p>
-          </motion.div>
+          </div>
 
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.6, delay: 2.3, ease: "easeOut" }}
-            className="flex flex-col sm:flex-row gap-4 justify-center items-center"
-          >
+          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
             <Link href="/new">
               <Button 
                 size="lg" 
@@ -68,15 +54,10 @@ export default function Home() {
                 Browse Topics
               </Button>
             </Link>
-          </motion.div>
+          </div>
 
           {/* Features Section */}
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1, delay: 2.5, ease: [0.16, 1, 0.3, 1] }}
-            className="grid gap-6 md:grid-cols-3"
-          >
+          <div className="grid gap-6 md:grid-cols-3">
             {[
               {
                 number: "01",
@@ -94,11 +75,8 @@ export default function Home() {
                 description: "Balanced presentation prevents echo chambers. See both sides, understand the nuances."
               }
             ].map((feature, index) => (
-              <motion.div
+              <div
                 key={feature.title}
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, delay: 2.6 + 0.15 * index, ease: [0.16, 1, 0.3, 1] }}
                 className="card card-hover text-left p-8"
               >
                 <p className="text-sm uppercase tracking-[0.3em] text-text-tertiary mb-3">
@@ -106,9 +84,9 @@ export default function Home() {
                 </p>
                 <h3 className="text-xl font-light mb-2">{feature.title}</h3>
                 <p className="text-text-secondary text-sm">{feature.description}</p>
-              </motion.div>
+              </div>
             ))}
-          </motion.div>
+          </div>
         </div>
       </main>
     </div>
