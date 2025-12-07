@@ -320,26 +320,26 @@ export async function getArgumentsSortedByValidity(
  * Upvote an argument
  * POST /api/arguments/{argument_id}/upvote
  */
-export async function upvoteArgument(argumentId: number): Promise<{ argument_id: number; votes: number }> {
+export async function upvoteArgument(argumentId: number): Promise<{ argument_id: number; votes: number; user_vote: 'upvote' | 'downvote' | null }> {
   const headers = await getAuthHeaders()
   const response = await fetch(`${API_BASE_URL}/api/arguments/${argumentId}/upvote`, {
     method: 'POST',
     headers,
   });
-  return handleResponse<{ argument_id: number; votes: number }>(response);
+  return handleResponse<{ argument_id: number; votes: number; user_vote: 'upvote' | 'downvote' | null }>(response);
 }
 
 /**
  * Downvote an argument
  * POST /api/arguments/{argument_id}/downvote
  */
-export async function downvoteArgument(argumentId: number): Promise<{ argument_id: number; votes: number }> {
+export async function downvoteArgument(argumentId: number): Promise<{ argument_id: number; votes: number; user_vote: 'upvote' | 'downvote' | null }> {
   const headers = await getAuthHeaders()
   const response = await fetch(`${API_BASE_URL}/api/arguments/${argumentId}/downvote`, {
     method: 'POST',
     headers,
   });
-  return handleResponse<{ argument_id: number; votes: number }>(response);
+  return handleResponse<{ argument_id: number; votes: number; user_vote: 'upvote' | 'downvote' | null }>(response);
 }
 
 /**

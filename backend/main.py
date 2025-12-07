@@ -20,6 +20,8 @@ database.init_db()
 database.migrate_add_validity_columns()
 # Run migration to add votes column
 database.migrate_add_votes_column()
+# Reset all vote counts to 0 (disregard seeded baseline votes)
+database.migrate_reset_vote_counts()
 
 # Create FastAPI app
 app = FastAPI(title="Debately API", version="1.0.0")
@@ -120,6 +122,8 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint for monitoring and load balancers."""
+    from config import config, verify_config_integrity
+    
     try:
         # Check database connection
         conn = database.get_db_connection()
@@ -128,13 +132,9 @@ async def health_check():
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         error_detail = str(e)
-        # Include more diagnostic info in response
-        # Get diagnostic info
-        import os
-        from pathlib import Path
-        from dotenv import load_dotenv
-        env_path = Path(__file__).parent.parent / 'backend' / '.env'
-        load_dotenv(dotenv_path=env_path)
+        
+        # Get config integrity status (uses immutable config)
+        config_status = verify_config_integrity()
         
         return JSONResponse(
             status_code=503,
@@ -143,12 +143,11 @@ async def health_check():
                 "database": "disconnected", 
                 "error": error_detail,
                 "diagnostics": {
-                    "db_host_set": bool(os.getenv("DB_HOST")),
-                    "db_user_set": bool(os.getenv("DB_USER")),
-                    "db_password_set": bool(os.getenv("DB_PASSWORD")),
-                    "db_name": os.getenv("DB_NAME", "postgres"),
-                    "db_port": os.getenv("DB_PORT", "5432"),
-                    "env_file_exists": env_path.exists()
+                    "db_host_set": bool(config.DB_HOST),
+                    "db_user_set": bool(config.DB_USER),
+                    "db_password_set": bool(config.DB_PASSWORD),
+                    "db_name": config.DB_NAME,
+                    "db_port": config.DB_PORT,
                 }
             }
         )

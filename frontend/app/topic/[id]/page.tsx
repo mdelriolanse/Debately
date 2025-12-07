@@ -45,6 +45,7 @@ export default function TopicPage() {
   const [submittingCommentId, setSubmittingCommentId] = useState<number | null>(null)
   const [comments, setComments] = useState<Record<number, CommentResponse[]>>({})
   const [loadingComments, setLoadingComments] = useState<Set<number>>(new Set())
+  const [userVotes, setUserVotes] = useState<Record<number, 'upvote' | 'downvote' | null>>({})
 
   // Helper function to extract domain from URL
   const getDomain = (url: string): string => {
@@ -137,16 +138,45 @@ export default function TopicPage() {
   }
 
   const handleVote = async (argumentId: number, voteType: 'upvote' | 'downvote') => {
+    if (!user) {
+      setError('You must be signed in to vote')
+      return
+    }
+    
     setVotingArgumentId(argumentId)
     try {
+      let response
       if (voteType === 'upvote') {
-        await upvoteArgument(argumentId)
+        response = await upvoteArgument(argumentId)
       } else {
-        await downvoteArgument(argumentId)
+        response = await downvoteArgument(argumentId)
       }
-      // Refresh topic data to get updated vote counts
+      
+      // Update user vote status
+      setUserVotes(prev => ({
+        ...prev,
+        [argumentId]: response.user_vote
+      }))
+      
+      // Update vote count in selectedTopic
       if (selectedTopic) {
-        await fetchTopicDetails(selectedTopic.id)
+        setSelectedTopic(prev => {
+          if (!prev) return prev
+          
+          const updateArgumentVotes = (args: typeof prev.pro_arguments) => {
+            return args.map(arg => 
+              arg.id === argumentId 
+                ? { ...arg, votes: response.votes }
+                : arg
+            )
+          }
+          
+          return {
+            ...prev,
+            pro_arguments: updateArgumentVotes(prev.pro_arguments),
+            con_arguments: updateArgumentVotes(prev.con_arguments)
+          }
+        })
       }
     } catch (err) {
       console.error('Error voting:', err)
@@ -676,8 +706,12 @@ export default function TopicPage() {
                         size="sm"
                         variant="ghost"
                         onClick={() => handleVote(arg.id, 'upvote')}
-                        disabled={votingArgumentId === arg.id}
-                        className="h-6 w-6 p-0 hover:bg-green-950/30 text-green-400 hover:text-green-300"
+                        disabled={votingArgumentId === arg.id || !user}
+                        className={`h-6 w-6 p-0 hover:bg-green-950/30 ${
+                          userVotes[arg.id] === 'upvote' 
+                            ? 'bg-green-950/50 text-green-300' 
+                            : 'text-green-400 hover:text-green-300'
+                        }`}
                       >
                         {votingArgumentId === arg.id ? (
                           <Loader2 className="w-3 h-3 animate-spin" />
@@ -692,8 +726,12 @@ export default function TopicPage() {
                         size="sm"
                         variant="ghost"
                         onClick={() => handleVote(arg.id, 'downvote')}
-                        disabled={votingArgumentId === arg.id}
-                        className="h-6 w-6 p-0 hover:bg-red-950/30 text-red-400 hover:text-red-300"
+                        disabled={votingArgumentId === arg.id || !user}
+                        className={`h-6 w-6 p-0 hover:bg-red-950/30 ${
+                          userVotes[arg.id] === 'downvote' 
+                            ? 'bg-red-950/50 text-red-300' 
+                            : 'text-red-400 hover:text-red-300'
+                        }`}
                       >
                         {votingArgumentId === arg.id ? (
                           <Loader2 className="w-3 h-3 animate-spin" />

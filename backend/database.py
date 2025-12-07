@@ -112,6 +112,9 @@ def init_db():
     
     # Run migration to add user_id columns if they don't exist
     migrate_add_user_id_columns()
+    
+    # Run migration to create votes table if it doesn't exist
+    migrate_create_votes_table()
 
 def ensure_argument_matches_table():
     """Ensure the argument_matches table exists (safe to call repeatedly)."""
@@ -484,6 +487,60 @@ def migrate_add_user_id_columns():
         cursor.close()
         conn.close()
 
+def migrate_create_votes_table():
+    """Create votes table if it doesn't exist."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Check if votes table exists
+        cursor.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'votes'
+            )
+        """)
+        table_exists = cursor.fetchone()[0]
+        
+        if not table_exists:
+            # Create votes table
+            cursor.execute("""
+                CREATE TABLE votes (
+                    id SERIAL PRIMARY KEY,
+                    argument_id INTEGER NOT NULL,
+                    user_id UUID NOT NULL,
+                    vote_type TEXT NOT NULL CHECK(vote_type IN ('upvote', 'downvote')),
+                    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (argument_id) REFERENCES arguments(id) ON DELETE CASCADE,
+                    FOREIGN KEY (user_id) REFERENCES user_profiles(id) ON DELETE CASCADE,
+                    UNIQUE(argument_id, user_id)
+                )
+            """)
+            conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+def migrate_reset_vote_counts():
+    """Reset all vote counts to 0 for existing arguments (disregard seeded baseline votes)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Set all vote counts to 0
+        cursor.execute("UPDATE arguments SET votes = 0 WHERE votes IS NOT NULL")
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
 def get_argument(argument_id: int) -> Optional[dict]:
     """Get a single argument by ID."""
     conn = get_db_connection()
@@ -632,39 +689,153 @@ def delete_argument_matches_for_topic(topic_id: str):
     cursor.close()
     conn.close()
 
-def upvote_argument(argument_id: int) -> int:
-    """Increment vote count for an argument and return new count."""
+def get_user_vote(argument_id: int, user_id: UUID) -> Optional[str]:
+    """Get user's vote type for an argument. Returns 'upvote', 'downvote', or None."""
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute(
-        "UPDATE arguments SET votes = votes + 1 WHERE id = %s RETURNING votes",
-        (argument_id,)
-    )
-    result = cursor.fetchone()
-    votes = result[0] if result else 0
-    
-    conn.commit()
-    cursor.close()
-    conn.close()
-    return votes
+    try:
+        cursor.execute(
+            "SELECT vote_type FROM votes WHERE argument_id = %s AND user_id = %s",
+            (argument_id, str(user_id))
+        )
+        result = cursor.fetchone()
+        return result[0] if result else None
+    finally:
+        cursor.close()
+        conn.close()
 
-def downvote_argument(argument_id: int) -> int:
-    """Decrement vote count for an argument and return new count."""
+def upvote_argument(argument_id: int, user_id: UUID) -> tuple[int, Optional[str]]:
+    """
+    Handle upvote for an argument by a user.
+    Returns tuple of (vote_count, user_vote_status) where user_vote_status is 'upvote', 'downvote', or None.
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute(
-        "UPDATE arguments SET votes = votes - 1 WHERE id = %s RETURNING votes",
-        (argument_id,)
-    )
-    result = cursor.fetchone()
-    votes = result[0] if result else 0
+    try:
+        # Check if user has already voted
+        cursor.execute(
+            "SELECT vote_type FROM votes WHERE argument_id = %s AND user_id = %s",
+            (argument_id, str(user_id))
+        )
+        existing_vote = cursor.fetchone()
+        
+        if existing_vote:
+            existing_type = existing_vote[0]
+            if existing_type == 'upvote':
+                # User already upvoted, remove the vote (toggle off)
+                cursor.execute(
+                    "DELETE FROM votes WHERE argument_id = %s AND user_id = %s",
+                    (argument_id, str(user_id))
+                )
+                user_vote_status = None
+            else:
+                # User downvoted, change to upvote
+                cursor.execute(
+                    "UPDATE votes SET vote_type = 'upvote' WHERE argument_id = %s AND user_id = %s",
+                    (argument_id, str(user_id))
+                )
+                user_vote_status = 'upvote'
+        else:
+            # No existing vote, create new upvote
+            cursor.execute(
+                "INSERT INTO votes (argument_id, user_id, vote_type, created_at) VALUES (%s, %s, 'upvote', %s)",
+                (argument_id, str(user_id), datetime.now(timezone.utc))
+            )
+            user_vote_status = 'upvote'
+        
+        # Calculate vote count from votes table
+        cursor.execute("""
+            SELECT 
+                COUNT(CASE WHEN vote_type = 'upvote' THEN 1 END) - 
+                COUNT(CASE WHEN vote_type = 'downvote' THEN 1 END) as vote_count
+            FROM votes
+            WHERE argument_id = %s
+        """, (argument_id,))
+        result = cursor.fetchone()
+        vote_count = result[0] if result else 0
+        
+        # Update arguments.votes column to keep it in sync
+        cursor.execute(
+            "UPDATE arguments SET votes = %s WHERE id = %s",
+            (vote_count, argument_id)
+        )
+        
+        conn.commit()
+        return vote_count, user_vote_status
+    except Exception as e:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+def downvote_argument(argument_id: int, user_id: UUID) -> tuple[int, Optional[str]]:
+    """
+    Handle downvote for an argument by a user.
+    Returns tuple of (vote_count, user_vote_status) where user_vote_status is 'upvote', 'downvote', or None.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
     
-    conn.commit()
-    cursor.close()
-    conn.close()
-    return votes
+    try:
+        # Check if user has already voted
+        cursor.execute(
+            "SELECT vote_type FROM votes WHERE argument_id = %s AND user_id = %s",
+            (argument_id, str(user_id))
+        )
+        existing_vote = cursor.fetchone()
+        
+        if existing_vote:
+            existing_type = existing_vote[0]
+            if existing_type == 'downvote':
+                # User already downvoted, remove the vote (toggle off)
+                cursor.execute(
+                    "DELETE FROM votes WHERE argument_id = %s AND user_id = %s",
+                    (argument_id, str(user_id))
+                )
+                user_vote_status = None
+            else:
+                # User upvoted, change to downvote
+                cursor.execute(
+                    "UPDATE votes SET vote_type = 'downvote' WHERE argument_id = %s AND user_id = %s",
+                    (argument_id, str(user_id))
+                )
+                user_vote_status = 'downvote'
+        else:
+            # No existing vote, create new downvote
+            cursor.execute(
+                "INSERT INTO votes (argument_id, user_id, vote_type, created_at) VALUES (%s, %s, 'downvote', %s)",
+                (argument_id, str(user_id), datetime.now(timezone.utc))
+            )
+            user_vote_status = 'downvote'
+        
+        # Calculate vote count from votes table
+        cursor.execute("""
+            SELECT 
+                COUNT(CASE WHEN vote_type = 'upvote' THEN 1 END) - 
+                COUNT(CASE WHEN vote_type = 'downvote' THEN 1 END) as vote_count
+            FROM votes
+            WHERE argument_id = %s
+        """, (argument_id,))
+        result = cursor.fetchone()
+        vote_count = result[0] if result else 0
+        
+        # Update arguments.votes column to keep it in sync
+        cursor.execute(
+            "UPDATE arguments SET votes = %s WHERE id = %s",
+            (vote_count, argument_id)
+        )
+        
+        conn.commit()
+        return vote_count, user_vote_status
+    except Exception as e:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
 
 def create_comment(argument_id: int, comment: str, user_id: Optional[UUID] = None) -> int:
     """Create a new comment for an argument and return the comment ID."""
