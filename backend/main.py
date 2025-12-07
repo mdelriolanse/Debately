@@ -92,15 +92,9 @@ async def log_requests(request: Request, call_next):
     logger.info(f"Response status: {response.status_code}")
     return response
 
-# Enable CORS
-# Get allowed origins from environment variable (comma-separated) or default to *
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",") if os.getenv("ALLOWED_ORIGINS") else ["*"]
-# Remove empty strings and strip whitespace
-allowed_origins = [origin.strip() for origin in allowed_origins if origin.strip()]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,  # In production, set ALLOWED_ORIGINS env var
+    allow_origins=["https://debately-delta.vercel.app"],  # In production, set ALLOWED_ORIGINS env var
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
