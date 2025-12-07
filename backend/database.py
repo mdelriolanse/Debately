@@ -5,21 +5,14 @@ from datetime import datetime
 from typing import Optional, List
 from uuid import UUID
 import json
-import os
-from pathlib import Path
-from dotenv import load_dotenv
+from config import config
 
-# Load .env file from the backend directory (works in both local and Docker)
-env_path = Path(__file__).parent / '.env'
-load_dotenv(dotenv_path=env_path)
-
-# Database connection parameters from environment variables
-# Default values are sample/placeholder - use .env file for real values
-DB_HOST = os.getenv("DB_HOST") 
-DB_PORT = os.getenv("DB_PORT", "5432")
-DB_NAME = os.getenv("DB_NAME", "postgres")
-DB_USER = os.getenv("DB_USER", "postgres")
-DB_PASSWORD = os.getenv("DB_PASSWORD")
+# Database connection parameters from immutable config
+DB_HOST = config.DB_HOST
+DB_PORT = config.DB_PORT
+DB_NAME = config.DB_NAME
+DB_USER = config.DB_USER
+DB_PASSWORD = config.DB_PASSWORD
 
 def get_db_connection():
     """Get a database connection."""
@@ -59,10 +52,10 @@ def init_db():
         )
     """)
     
-    # Create topics table
+    # Create topics table (using UUID for id)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS topics (
-            id SERIAL PRIMARY KEY,
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             proposition TEXT NOT NULL,
             created_by TEXT NOT NULL,
             user_id UUID,
@@ -74,11 +67,11 @@ def init_db():
         )
     """)
     
-    # Create arguments table
+    # Create arguments table (topic_id is UUID)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS arguments (
             id SERIAL PRIMARY KEY,
-            topic_id INTEGER NOT NULL,
+            topic_id UUID NOT NULL,
             side TEXT NOT NULL CHECK(side IN ('pro', 'con')),
             title TEXT NOT NULL,
             content TEXT NOT NULL,
@@ -103,6 +96,16 @@ def init_db():
         )
     """)
     
+    # Create api_usage table for tracking global API call limits
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS api_usage (
+            id SERIAL PRIMARY KEY,
+            api_name TEXT UNIQUE NOT NULL,
+            call_count INTEGER NOT NULL DEFAULT 0,
+            last_reset TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
     conn.commit()
     cursor.close()
     conn.close()
@@ -117,7 +120,7 @@ def ensure_argument_matches_table():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS argument_matches (
             id SERIAL PRIMARY KEY,
-            topic_id INTEGER NOT NULL,
+            topic_id UUID NOT NULL,
             pro_id INTEGER NOT NULL,
             con_id INTEGER NOT NULL,
             reason TEXT,
@@ -129,8 +132,8 @@ def ensure_argument_matches_table():
     cursor.close()
     conn.close()
 
-def get_topic(topic_id: int) -> Optional[dict]:
-    """Get a topic by ID."""
+def get_topic(topic_id: str) -> Optional[dict]:
+    """Get a topic by UUID."""
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     cursor.execute("SELECT * FROM topics WHERE id = %s", (topic_id,))
@@ -140,17 +143,21 @@ def get_topic(topic_id: int) -> Optional[dict]:
     
     if row:
         topic = dict(row)
+        topic['id'] = str(topic['id'])  # Convert UUID to string
         topic['created_at'] = _format_datetime_to_iso(topic.get('created_at'))
         return topic
     return None
 
 def create_topic(proposition: str, created_by: str, user_id: Optional[UUID] = None) -> dict:
     """Create a new topic and return the full topic data."""
+    import uuid as uuid_module
+    topic_uuid = str(uuid_module.uuid4())
+    
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     cursor.execute(
-        "INSERT INTO topics (proposition, created_by, user_id, created_at) VALUES (%s, %s, %s, %s) RETURNING *",
-        (proposition, created_by, str(user_id) if user_id else None, datetime.now(timezone.utc))
+        "INSERT INTO topics (id, proposition, created_by, user_id, created_at) VALUES (%s, %s, %s, %s, %s) RETURNING *",
+        (topic_uuid, proposition, created_by, str(user_id) if user_id else None, datetime.now(timezone.utc))
     )
     row = cursor.fetchone()
     conn.commit()
@@ -158,6 +165,7 @@ def create_topic(proposition: str, created_by: str, user_id: Optional[UUID] = No
     conn.close()
     if row:
         topic = dict(row)
+        topic['id'] = str(topic['id'])  # Convert UUID to string
         topic['created_at'] = _format_datetime_to_iso(topic.get('created_at'))
         return topic
     return None
@@ -186,6 +194,7 @@ def get_all_topics() -> list:
     
     # Convert datetime to ISO string and calculate validity metrics for each topic
     for topic in topics:
+        topic['id'] = str(topic['id'])  # Convert UUID to string
         topic['created_at'] = _format_datetime_to_iso(topic.get('created_at'))
         topic_id = topic['id']
         
@@ -240,7 +249,7 @@ def get_all_topics() -> list:
     conn.close()
     return topics
 
-def get_topic_with_arguments(topic_id: int) -> Optional[dict]:
+def get_topic_with_arguments(topic_id: str) -> Optional[dict]:
     """Get a topic with its arguments, sorted by validity score (highest first)."""
     topic = get_topic(topic_id)
     if not topic:
@@ -264,6 +273,7 @@ def get_topic_with_arguments(topic_id: int) -> Optional[dict]:
     arguments = [dict(row) for row in rows]
     # Parse key_urls JSON and convert timestamps for each argument
     for arg in arguments:
+        arg['topic_id'] = str(arg['topic_id'])  # Convert UUID to string
         if arg.get('key_urls'):
             try:
                 arg['key_urls'] = json.loads(arg['key_urls'])
@@ -298,7 +308,7 @@ def get_topic_with_arguments(topic_id: int) -> Optional[dict]:
         'timeline_view': timeline_view
     }
 
-def create_argument(topic_id: int, side: str, title: str, content: str, author: str, sources: Optional[str] = None, user_id: Optional[UUID] = None) -> int:
+def create_argument(topic_id: str, side: str, title: str, content: str, author: str, sources: Optional[str] = None, user_id: Optional[UUID] = None) -> int:
     """Create a new argument and return its ID."""
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -313,7 +323,7 @@ def create_argument(topic_id: int, side: str, title: str, content: str, author: 
     conn.close()
     return argument_id
 
-def get_arguments(topic_id: int, side: Optional[str] = None) -> list:
+def get_arguments(topic_id: str, side: Optional[str] = None) -> list:
     """Get arguments for a topic, optionally filtered by side."""
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -335,11 +345,12 @@ def get_arguments(topic_id: int, side: Optional[str] = None) -> list:
     arguments = [dict(row) for row in rows]
     # Convert datetime to ISO string for each argument
     for arg in arguments:
+        arg['topic_id'] = str(arg['topic_id'])  # Convert UUID to string
         arg['created_at'] = _format_datetime_to_iso(arg.get('created_at'))
         arg['validity_checked_at'] = _format_datetime_to_iso(arg.get('validity_checked_at'))
     return arguments
 
-def get_argument_counts(topic_id: int) -> dict:
+def get_argument_counts(topic_id: str) -> dict:
     """Get pro and con argument counts for a topic."""
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -355,7 +366,7 @@ def get_argument_counts(topic_id: int) -> dict:
     conn.close()
     return dict(row) if row else {'pro_count': 0, 'con_count': 0}
 
-def update_topic_analysis(topic_id: int, overall_summary: str, consensus_view: str, timeline_view: list):
+def update_topic_analysis(topic_id: str, overall_summary: str, consensus_view: str, timeline_view: list):
     """Update topic with generated analysis."""
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -484,6 +495,7 @@ def get_argument(argument_id: int) -> Optional[dict]:
     
     if row:
         arg = dict(row)
+        arg['topic_id'] = str(arg['topic_id'])  # Convert UUID to string
         # Parse key_urls JSON if it exists
         if arg.get('key_urls'):
             try:
@@ -530,7 +542,7 @@ def update_argument_validity(argument_id: int, validity_score: int, validity_rea
     cursor.close()
     conn.close()
 
-def get_arguments_sorted_by_validity(topic_id: int, side: Optional[str] = None) -> list:
+def get_arguments_sorted_by_validity(topic_id: str, side: Optional[str] = None) -> list:
     """Get arguments sorted by validity score (highest first, unverified at end)."""
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -561,6 +573,7 @@ def get_arguments_sorted_by_validity(topic_id: int, side: Optional[str] = None) 
     arguments = [dict(row) for row in rows]
     # Parse key_urls JSON and convert timestamps for each argument
     for arg in arguments:
+        arg['topic_id'] = str(arg['topic_id'])  # Convert UUID to string
         if arg.get('key_urls'):
             try:
                 arg['key_urls'] = json.loads(arg['key_urls'])
@@ -574,7 +587,7 @@ def get_arguments_sorted_by_validity(topic_id: int, side: Optional[str] = None) 
     
     return arguments
 
-def get_argument_matches(topic_id: int) -> list:
+def get_argument_matches(topic_id: str) -> list:
     """Get persisted argument matches for a topic."""
     ensure_argument_matches_table()
     conn = get_db_connection()
@@ -588,7 +601,7 @@ def get_argument_matches(topic_id: int) -> list:
     conn.close()
     return [dict(row) for row in rows]
 
-def save_argument_matches(topic_id: int, matches: list):
+def save_argument_matches(topic_id: str, matches: list):
     """Save argument matches to database."""
     ensure_argument_matches_table()
     conn = get_db_connection()
@@ -609,7 +622,7 @@ def save_argument_matches(topic_id: int, matches: list):
     cursor.close()
     conn.close()
 
-def delete_argument_matches_for_topic(topic_id: int):
+def delete_argument_matches_for_topic(topic_id: str):
     """Delete all argument matches for a topic."""
     ensure_argument_matches_table()
     conn = get_db_connection()
@@ -788,6 +801,80 @@ def delete_user_profile(user_id: UUID) -> bool:
     finally:
         cursor.close()
         conn.close()
+
+
+def get_user_contribution_count(user_id: UUID) -> int:
+    """Get total count of topics + arguments created by a user."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Count topics created by user
+        cursor.execute(
+            "SELECT COUNT(*) FROM topics WHERE user_id = %s",
+            (str(user_id),)
+        )
+        topic_count = cursor.fetchone()[0]
+        
+        # Count arguments created by user
+        cursor.execute(
+            "SELECT COUNT(*) FROM arguments WHERE user_id = %s",
+            (str(user_id),)
+        )
+        argument_count = cursor.fetchone()[0]
+        
+        return topic_count + argument_count
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# API Usage Tracking Functions
+
+def get_api_call_count(api_name: str) -> int:
+    """Get the current call count for an API."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute(
+            "SELECT call_count FROM api_usage WHERE api_name = %s",
+            (api_name,)
+        )
+        result = cursor.fetchone()
+        return result[0] if result else 0
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def increment_api_call_count(api_name: str) -> int:
+    """Increment the call count for an API and return the new count."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Use upsert to handle first-time insertion
+        cursor.execute("""
+            INSERT INTO api_usage (api_name, call_count, last_reset)
+            VALUES (%s, 1, CURRENT_TIMESTAMP)
+            ON CONFLICT (api_name) 
+            DO UPDATE SET call_count = api_usage.call_count + 1
+            RETURNING call_count
+        """, (api_name,))
+        
+        result = cursor.fetchone()
+        conn.commit()
+        return result[0] if result else 1
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def check_api_limit(api_name: str, limit: int = 750) -> bool:
+    """Check if an API is under its call limit. Returns True if under limit."""
+    current_count = get_api_call_count(api_name)
+    return current_count < limit
 
 
 if __name__ == '__main__':

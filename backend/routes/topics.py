@@ -9,6 +9,9 @@ from utils.user import ensure_user_profile
 
 router = APIRouter(prefix="/api/topics", tags=["topics"])
 
+# Contribution limit per user (topics + arguments combined)
+USER_CONTRIBUTION_LIMIT = 25
+
 @router.post("/validate-proposition", tags=["topics"])
 async def validate_proposition_endpoint(request: PropositionValidateRequest):
     """Validate a proposition and return suggestions"""
@@ -22,6 +25,19 @@ async def create_topic(
 ):
     """Create a new debate topic."""
     user_id, username = ensure_user_profile(user_data)
+    
+    # Check user's contribution quota
+    contribution_count = database.get_user_contribution_count(user_id)
+    if contribution_count >= USER_CONTRIBUTION_LIMIT:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "quota_exceeded",
+                "message": f"You've reached the limit of {USER_CONTRIBUTION_LIMIT} contributions (topics + arguments). Thank you for your participation!",
+                "current_count": contribution_count,
+                "limit": USER_CONTRIBUTION_LIMIT
+            }
+        )
     
     topic_data = database.create_topic(
         proposition=topic.proposition,
@@ -45,7 +61,7 @@ async def get_topics():
     return [TopicListItem(**topic) for topic in topics]
 
 @router.get("/{topic_id}", response_model=TopicDetailResponse)
-async def get_topic(topic_id: int):
+async def get_topic(topic_id: str):
     """
     Get a topic with its arguments and analysis.
     Automatically verifies arguments and generates Claude analysis if missing.

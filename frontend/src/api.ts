@@ -5,7 +5,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 // Helper to get auth headers
 async function getAuthHeaders(): Promise<HeadersInit> {
@@ -30,14 +30,14 @@ export interface TopicCreate {
 }
 
 export interface TopicResponse {
-  topic_id: number;
+  topic_id: string;  // UUID as string
   proposition: string;
   created_by: string;
   created_at?: string;
 }
 
 export interface TopicListItem {
-  id: number;
+  id: string;  // UUID as string
   proposition: string;
   pro_count: number;
   con_count: number;
@@ -58,7 +58,7 @@ export interface ArgumentCreate {
 
 export interface ArgumentResponse {
   id: number;
-  topic_id: number;
+  topic_id: string;  // UUID as string
   side: 'pro' | 'con';
   title: string;
   content: string;
@@ -73,7 +73,7 @@ export interface ArgumentResponse {
 }
 
 export interface TopicDetailResponse {
-  id: number;
+  id: string;  // UUID as string
   proposition: string;
   pro_arguments: ArgumentResponse[];
   con_arguments: ArgumentResponse[];
@@ -205,7 +205,7 @@ export async function getTopics(): Promise<TopicListItem[]> {
  * Get a single topic with all its arguments and analysis
  * GET /api/topics/{topic_id}
  */
-export async function getTopic(topicId: number): Promise<TopicDetailResponse> {
+export async function getTopic(topicId: string): Promise<TopicDetailResponse> {
   const headers = await getAuthHeaders()
   const response = await fetch(`${API_BASE_URL}/api/topics/${topicId}`, {
     method: 'GET',
@@ -219,7 +219,7 @@ export async function getTopic(topicId: number): Promise<TopicDetailResponse> {
  * POST /api/topics/{topic_id}/arguments
  */
 export async function createArgument(
-  topicId: number,
+  topicId: string,
   data: ArgumentCreate
 ): Promise<ArgumentCreateResponse> {
   const headers = await getAuthHeaders()
@@ -236,7 +236,7 @@ export async function createArgument(
  * GET /api/topics/{topic_id}/arguments?side=pro|con|both
  */
 export async function getArguments(
-  topicId: number,
+  topicId: string,
   side?: 'pro' | 'con' | 'both'
 ): Promise<ArgumentResponse[]> {
   const headers = await getAuthHeaders()
@@ -252,7 +252,7 @@ export async function getArguments(
  * Generate Claude analysis for a topic
  * POST /api/topics/{topic_id}/generate-summary
  */
-export async function generateSummary(topicId: number): Promise<SummaryResponse> {
+export async function generateSummary(topicId: string): Promise<SummaryResponse> {
   const headers = await getAuthHeaders()
   const response = await fetch(`${API_BASE_URL}/api/topics/${topicId}/generate-summary`, {
     method: 'POST',
@@ -278,7 +278,7 @@ export async function verifyArgument(argumentId: number): Promise<ValidityVerdic
  * Verify all arguments for a topic
  * POST /api/topics/{topic_id}/verify-all
  */
-export async function verifyAllArguments(topicId: number): Promise<{
+export async function verifyAllArguments(topicId: string): Promise<{
   total_arguments: number;
   verified: number;
   failed: number;
@@ -303,7 +303,7 @@ export async function verifyAllArguments(topicId: number): Promise<{
  * GET /api/topics/{topic_id}/arguments/verified?side=pro|con
  */
 export async function getArgumentsSortedByValidity(
-  topicId: number,
+  topicId: string,
   side?: 'pro' | 'con'
 ): Promise<ArgumentResponse[]> {
   const headers = await getAuthHeaders()

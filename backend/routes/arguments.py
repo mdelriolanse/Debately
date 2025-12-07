@@ -8,9 +8,12 @@ from utils.user import ensure_user_profile
 
 router = APIRouter(prefix="/api/topics/{topic_id}/arguments", tags=["arguments"])
 
+# Contribution limit per user (topics + arguments combined)
+USER_CONTRIBUTION_LIMIT = 25
+
 @router.post("", response_model=ArgumentCreateResponse, status_code=201)
 async def create_argument(
-    topic_id: int, 
+    topic_id: str, 
     argument: ArgumentCreate,
     user_data: dict = Depends(get_current_user)
 ):
@@ -25,6 +28,19 @@ async def create_argument(
         raise HTTPException(status_code=400, detail="side must be either 'pro' or 'con'")
     
     user_id, username = ensure_user_profile(user_data)
+    
+    # Check user's contribution quota BEFORE running expensive fact-checker
+    contribution_count = database.get_user_contribution_count(user_id)
+    if contribution_count >= USER_CONTRIBUTION_LIMIT:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "quota_exceeded",
+                "message": f"You've reached the limit of {USER_CONTRIBUTION_LIMIT} contributions (topics + arguments). Thank you for your participation!",
+                "current_count": contribution_count,
+                "limit": USER_CONTRIBUTION_LIMIT
+            }
+        )
     
     # Run fact-checker to verify relevance before saving
     verdict = fact_checker.verify_argument(
@@ -64,7 +80,7 @@ async def create_argument(
 
 
 @router.put("/{argument_id}")
-async def update_argument(topic_id: int, argument_id: int, argument: ArgumentCreate):
+async def update_argument(topic_id: str, argument_id: int, argument: ArgumentCreate):
     """Update an existing argument. Clearing persisted matches for the topic so they will be re-evaluated."""
     # Validate topic exists
     topic = database.get_topic(topic_id)
@@ -84,7 +100,7 @@ async def update_argument(topic_id: int, argument_id: int, argument: ArgumentCre
 
 @router.get("", response_model=list[ArgumentResponse])
 async def get_arguments(
-    topic_id: int,
+    topic_id: str,
     side: Optional[str] = Query(None, description="Filter by side: 'pro', 'con', or 'both' (default)")
 ):
     """Get arguments for a topic, optionally filtered by side."""

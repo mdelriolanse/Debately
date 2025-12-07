@@ -6,7 +6,7 @@ from models import SummaryResponse
 router = APIRouter(prefix="/api/topics/{topic_id}", tags=["summaries"])
 
 @router.post("/generate-summary", response_model=SummaryResponse)
-async def generate_summary(topic_id: int):
+async def generate_summary(topic_id: str):
     """Generate summary, consensus view, and timeline view using Claude."""
     topic_data = database.get_topic_with_arguments(topic_id)
     if not topic_data:

@@ -234,8 +234,14 @@ export default function NewDebatePage() {
       
       // Navigate to the new topic
       router.push(`/topic/${topicId}`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create debate')
+    } catch (err: unknown) {
+      // Check for quota exceeded error (403)
+      const errorObj = err as { status?: number; detail?: { error?: string; message?: string } }
+      if (errorObj.status === 403 && errorObj.detail?.error === 'quota_exceeded') {
+        setError(errorObj.detail.message || "You've reached your contribution limit.")
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to create debate')
+      }
       console.error('Error creating debate:', err)
     } finally {
       setLoading(false)

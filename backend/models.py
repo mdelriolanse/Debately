@@ -16,7 +16,7 @@ class ArgumentCreate(BaseModel):
 
 # Response Models
 class TopicResponse(BaseModel):
-    topic_id: int
+    topic_id: str  # UUID as string
     proposition: str
     created_by: str
     created_at: Optional[str] = None
@@ -25,7 +25,7 @@ class TopicResponse(BaseModel):
         from_attributes = True
 
 class TopicListItem(BaseModel):
-    id: int
+    id: str  # UUID as string
     proposition: str
     pro_count: int
     con_count: int
@@ -40,7 +40,7 @@ class TopicListItem(BaseModel):
 
 class ArgumentResponse(BaseModel):
     id: int
-    topic_id: int
+    topic_id: str  # UUID as string
     side: str
     title: str
     content: str
@@ -57,7 +57,7 @@ class ArgumentResponse(BaseModel):
         from_attributes = True
 
 class TopicDetailResponse(BaseModel):
-    id: int
+    id: str  # UUID as string
     proposition: str
     pro_arguments: List[ArgumentResponse]
     con_arguments: List[ArgumentResponse]

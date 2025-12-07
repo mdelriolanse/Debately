@@ -42,7 +42,7 @@ async def verify_argument(argument_id: int):
 
 
 @router.post("/topics/{topic_id}/verify-all", response_model=dict)
-async def verify_all_arguments(topic_id: int):
+async def verify_all_arguments(topic_id: str):
     """
     Verify all arguments for a topic in batch.
     Returns a summary of verification results.
@@ -102,7 +102,7 @@ async def verify_all_arguments(topic_id: int):
 
 @router.get("/topics/{topic_id}/arguments/verified", response_model=list[ArgumentWithValidityResponse])
 async def get_arguments_sorted_by_validity(
-    topic_id: int,
+    topic_id: str,
     side: Optional[str] = None
 ):
     """

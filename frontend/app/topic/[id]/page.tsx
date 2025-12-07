@@ -23,7 +23,7 @@ import {
 
 export default function TopicPage() {
   const params = useParams()
-  const topicId = Number(params.id)
+  const topicId = params.id as string  // UUID is a string
   const { user } = useAuth()
   
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -55,7 +55,7 @@ export default function TopicPage() {
     }
   }
 
-  const fetchTopicDetails = async (id: number) => {
+  const fetchTopicDetails = async (id: string) => {
     setLoading(true)
     setError(null)
     try {
@@ -107,9 +107,13 @@ export default function TopicPage() {
       // Refresh topic data
       await fetchTopicDetails(selectedTopic.id)
     } catch (err: unknown) {
-      // Check if this is a rejection error (400 status with specific structure)
-      if (err && typeof err === 'object' && 'response' in err) {
-        const errorResponse = err as { response?: { status?: number; data?: { detail?: { message?: string; reasoning?: string; error?: string } | string } } }
+      // Check for quota exceeded error (403)
+      const errorObj = err as { status?: number; detail?: { error?: string; message?: string }; response?: { status?: number; data?: { detail?: { message?: string; reasoning?: string; error?: string } | string } } }
+      if (errorObj.status === 403 && errorObj.detail?.error === 'quota_exceeded') {
+        setError(errorObj.detail.message || "You've reached your contribution limit.")
+      } else if (err && typeof err === 'object' && 'response' in err) {
+        // Check if this is a rejection error (400 status with specific structure)
+        const errorResponse = errorObj
         if (errorResponse.response?.status === 400) {
           const errorDetail = errorResponse.response?.data?.detail || {}
           // Handle case where detail might be a string or an object
