@@ -19,14 +19,14 @@ MODEL = "claude-sonnet-4-20250514"
 
 response_json = """
     {
-        "original_input": "The user's original input, quoted verbatim",
+        "original_input": <The user's original input, quoted verbatim>,
         "is_valid": <boolean>,
         "rejection_reason": <str or None>,
-        "interpretation": "A brief sentence explaining how you understood the user's intent and what angle(s) they seem interested in",
+        "interpretation": <A gentle suggestion for how the user might consider, if they wish, reformulating their prompt to take a stance.>,
         "suggestions": [
             {
-            "proposition": "The formal debate proposition",
-            "type": "policy | value | fact"
+            "proposition": <The formal debate proposition>,
+            "type": <policy | value | fact>
             }
         ]
     }
@@ -34,7 +34,7 @@ response_json = """
 
 prompt_template = """
     <role>
-    You are a debate proposition formatter. Your task is to take a user's input—whether it's a question, a vague topic, or a rough statement—and convert it into formal debate propositions suitable for a speech and debate competition.
+    You are a debate proposition formatter. Your task is to take a user's input—whether it's a question, a vague topic, or a rough statement—and REFORMULATE it into formal debate propositions suitable for a speech and debate competition. You must preserve the core topic and intent of the original input, only changing the wording and structure to make it debatable.
     </role>
 
     <guidelines>
@@ -44,6 +44,14 @@ prompt_template = """
     - Balanced enough that reasonable people could argue either side
     - Written in a formal but accessible register
     - Specific enough to be meaningfully debated, but not so narrow it limits argumentation
+    
+    <reformulation_examples>
+    - "Should remote work be the default?" → "Remote work should be the default."
+    - "Would Universal Basic Income reduce poverty?" → "Universal Basic Income would reduce poverty." or "Universal Basic Income would not reduce poverty."
+    - "What is the meaning of life?" → "Life has inherent meaning." or "Life has no inherent meaning." or "The meaning of life can be determined through [philosophical/religious/secular] frameworks."
+    </reformulation_examples>
+    
+    IMPORTANT: Your suggestions must REFORMULATE the user's input, not create new propositions about different topics. If the user asks about X, all suggestions must be about X, just worded differently.
     </guidelines>
 
     <proposition_types>
@@ -59,7 +67,7 @@ prompt_template = """
     </user_proposition>
 
     <output_format>
-    Respond with valid JSON only, no markdown code fences or explanation.
+    Respond with valid JSON only, no markdown code fences or explanation. Fields for you to fill it appropriately enclosed as <>.
     {response_json}
     </output_format>
 
@@ -77,8 +85,12 @@ prompt_template = """
 
     <requirements>
     - Provide exactly 5 suggestions, ordered from most to least aligned with the user's apparent intent
-    - Each suggestion should offer a meaningfully different angle or framing on the topic
-    - Vary the proposition types where appropriate
+    - Each suggestion should be a REFORMULATION of the user's original input, not a new topic or idea
+    - Convert questions into declarative statements (e.g., "Should X?" → "X should" or "X should not")
+    - Keep the core topic and meaning the same as the original input
+    - Only vary the wording, structure, or framing slightly (e.g., different word order, active vs passive voice, question → statement)
+    - Do NOT introduce new concepts, angles, or topics that weren't in the original input
+    - If the input is a question, convert it to a statement format that preserves the original question's intent
     </requirements>
 """
 

@@ -3,6 +3,7 @@ from datetime import timezone
 from psycopg2.extras import RealDictCursor
 from datetime import datetime
 from typing import Optional, List
+from uuid import UUID
 import json
 import os
 from pathlib import Path
@@ -46,16 +47,30 @@ def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
     
+    # Create user_profiles table first (referenced by other tables)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_profiles (
+            id UUID PRIMARY KEY,
+            username TEXT UNIQUE NOT NULL,
+            email TEXT NOT NULL,
+            avatar_url TEXT,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
     # Create topics table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS topics (
             id SERIAL PRIMARY KEY,
             proposition TEXT NOT NULL,
             created_by TEXT NOT NULL,
+            user_id UUID,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             overall_summary TEXT,
             consensus_view TEXT,
-            timeline_view TEXT
+            timeline_view TEXT,
+            FOREIGN KEY (user_id) REFERENCES user_profiles(id) ON DELETE SET NULL
         )
     """)
     
@@ -69,8 +84,10 @@ def init_db():
             content TEXT NOT NULL,
             sources TEXT,
             author TEXT NOT NULL,
+            user_id UUID,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE CASCADE
+            FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES user_profiles(id) ON DELETE SET NULL
         )
     """)
 
@@ -79,14 +96,19 @@ def init_db():
             id SERIAL PRIMARY KEY,
             argument_id INTEGER NOT NULL,
             comment TEXT NOT NULL,
+            user_id UUID,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (argument_id) REFERENCES arguments(id) ON DELETE CASCADE
+            FOREIGN KEY (argument_id) REFERENCES arguments(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES user_profiles(id) ON DELETE SET NULL
         )
     """)
     
     conn.commit()
     cursor.close()
     conn.close()
+    
+    # Run migration to add user_id columns if they don't exist
+    migrate_add_user_id_columns()
 
 def ensure_argument_matches_table():
     """Ensure the argument_matches table exists (safe to call repeatedly)."""
@@ -122,13 +144,13 @@ def get_topic(topic_id: int) -> Optional[dict]:
         return topic
     return None
 
-def create_topic(proposition: str, created_by: str) -> dict:
+def create_topic(proposition: str, created_by: str, user_id: Optional[UUID] = None) -> dict:
     """Create a new topic and return the full topic data."""
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     cursor.execute(
-        "INSERT INTO topics (proposition, created_by, created_at) VALUES (%s, %s, %s) RETURNING *",
-        (proposition, created_by, datetime.now(timezone.utc))
+        "INSERT INTO topics (proposition, created_by, user_id, created_at) VALUES (%s, %s, %s, %s) RETURNING *",
+        (proposition, created_by, str(user_id) if user_id else None, datetime.now(timezone.utc))
     )
     row = cursor.fetchone()
     conn.commit()
@@ -193,12 +215,12 @@ def get_all_topics() -> list:
         else:
             topic['con_avg_validity'] = None
         
-        # Calculate controversy level
+        # Calculate controversy level (only when there are more than 6 arguments)
         pro_count = topic['pro_count']
         con_count = topic['con_count']
         total_count = pro_count + con_count
         
-        if total_count == 0:
+        if total_count == 0 or total_count <= 6:
             topic['controversy_level'] = None
         else:
             # Calculate balance ratio (closer to 0.5 = more balanced/contested)
@@ -276,14 +298,14 @@ def get_topic_with_arguments(topic_id: int) -> Optional[dict]:
         'timeline_view': timeline_view
     }
 
-def create_argument(topic_id: int, side: str, title: str, content: str, author: str, sources: Optional[str] = None) -> int:
+def create_argument(topic_id: int, side: str, title: str, content: str, author: str, sources: Optional[str] = None, user_id: Optional[UUID] = None) -> int:
     """Create a new argument and return its ID."""
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        """INSERT INTO arguments (topic_id, side, title, content, sources, author, created_at) 
-           VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-        (topic_id, side, title, content, sources, author, datetime.now(timezone.utc))
+        """INSERT INTO arguments (topic_id, side, title, content, sources, author, user_id, created_at) 
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+        (topic_id, side, title, content, sources, author, str(user_id) if user_id else None, datetime.now(timezone.utc))
     )
     argument_id = cursor.fetchone()[0]
     conn.commit()
@@ -397,6 +419,53 @@ def migrate_add_votes_column():
         if 'votes' not in columns:
             cursor.execute("ALTER TABLE arguments ADD COLUMN votes INTEGER DEFAULT 0")
             conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+def migrate_add_user_id_columns():
+    """Add user_id UUID columns to topics, arguments, and comments tables if they don't exist."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Check and add user_id to topics
+        cursor.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'topics' AND table_schema = 'public'
+        """)
+        topic_columns = [row[0] for row in cursor.fetchall()]
+        if 'user_id' not in topic_columns:
+            cursor.execute("ALTER TABLE topics ADD COLUMN user_id UUID")
+            cursor.execute("ALTER TABLE topics ADD CONSTRAINT fk_topics_user FOREIGN KEY (user_id) REFERENCES user_profiles(id) ON DELETE SET NULL")
+        
+        # Check and add user_id to arguments
+        cursor.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'arguments' AND table_schema = 'public'
+        """)
+        arg_columns = [row[0] for row in cursor.fetchall()]
+        if 'user_id' not in arg_columns:
+            cursor.execute("ALTER TABLE arguments ADD COLUMN user_id UUID")
+            cursor.execute("ALTER TABLE arguments ADD CONSTRAINT fk_arguments_user FOREIGN KEY (user_id) REFERENCES user_profiles(id) ON DELETE SET NULL")
+        
+        # Check and add user_id to comments
+        cursor.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'comments' AND table_schema = 'public'
+        """)
+        comment_columns = [row[0] for row in cursor.fetchall()]
+        if 'user_id' not in comment_columns:
+            cursor.execute("ALTER TABLE comments ADD COLUMN user_id UUID")
+            cursor.execute("ALTER TABLE comments ADD CONSTRAINT fk_comments_user FOREIGN KEY (user_id) REFERENCES user_profiles(id) ON DELETE SET NULL")
+        
+        conn.commit()
     except Exception as e:
         conn.rollback()
         raise
@@ -584,14 +653,14 @@ def downvote_argument(argument_id: int) -> int:
     conn.close()
     return votes
 
-def create_comment(argument_id: int, comment: str) -> int:
+def create_comment(argument_id: int, comment: str, user_id: Optional[UUID] = None) -> int:
     """Create a new comment for an argument and return the comment ID."""
     conn = get_db_connection() 
     cursor = conn.cursor()
 
     cursor.execute(
-        """INSERT INTO comments (argument_id, comment, created_at) VALUES (%s, %s, %s) RETURNING id""",
-        (argument_id, comment, datetime.now(timezone.utc))
+        """INSERT INTO comments (argument_id, comment, user_id, created_at) VALUES (%s, %s, %s, %s) RETURNING id""",
+        (argument_id, comment, str(user_id) if user_id else None, datetime.now(timezone.utc))
     )
 
     result = cursor.fetchone()
@@ -626,3 +695,103 @@ def get_comments(argument_id: int) -> list[dict]:
     cursor.close()
     conn.close()
     return comments
+
+# User Profile Functions
+
+def create_user_profile(user_id: UUID, email: str, username: str, avatar_url: Optional[str] = None) -> dict:
+    """Create a new user profile or update existing one."""
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    
+    try:
+        # Try to update existing profile first
+        cursor.execute("""
+            UPDATE user_profiles 
+            SET username = %s, email = %s, avatar_url = %s, updated_at = %s
+            WHERE id = %s
+            RETURNING *
+        """, (username, email, avatar_url, datetime.now(timezone.utc), str(user_id)))
+        
+        row = cursor.fetchone()
+        
+        if not row:
+            # Create new profile if it doesn't exist
+            cursor.execute("""
+                INSERT INTO user_profiles (id, username, email, avatar_url, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING *
+            """, (str(user_id), username, email, avatar_url, datetime.now(timezone.utc), datetime.now(timezone.utc)))
+            row = cursor.fetchone()
+        
+        conn.commit()
+        
+        if row:
+            profile = dict(row)
+            profile['created_at'] = _format_datetime_to_iso(profile.get('created_at'))
+            profile['updated_at'] = _format_datetime_to_iso(profile.get('updated_at'))
+            return profile
+        return None
+    except Exception as e:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_user_profile(user_id: UUID) -> Optional[dict]:
+    """Get a user profile by user_id."""
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    
+    try:
+        cursor.execute("SELECT * FROM user_profiles WHERE id = %s", (str(user_id),))
+        row = cursor.fetchone()
+        
+        if row:
+            profile = dict(row)
+            profile['created_at'] = _format_datetime_to_iso(profile.get('created_at'))
+            profile['updated_at'] = _format_datetime_to_iso(profile.get('updated_at'))
+            return profile
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_or_create_user_profile(user_id: UUID, email: str, username: str, avatar_url: Optional[str] = None) -> dict:
+    """Get existing user profile or create a new one."""
+    profile = get_user_profile(user_id)
+    if profile:
+        return profile
+    return create_user_profile(user_id, email, username, avatar_url)
+
+def delete_user_profile(user_id: UUID) -> bool:
+    """Delete a user profile and all associated data."""
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    
+    try:
+        # Check if profile exists
+        profile = get_user_profile(user_id)
+        if not profile:
+            return False
+        
+        # Delete the user profile
+        # Foreign keys are set to ON DELETE SET NULL, so topics, arguments, and comments
+        # will have their user_id set to NULL automatically
+        cursor.execute("DELETE FROM user_profiles WHERE id = %s", (str(user_id),))
+        
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+
+if __name__ == '__main__':
+    # Test database connection
+    conn = get_db_connection()
+    print("Database connection successful!")
+    conn.close()

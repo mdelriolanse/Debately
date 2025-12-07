@@ -124,3 +124,15 @@ class PropositionValidationResponse(BaseModel):
     rejection_reason: Optional[str]
     interpretation: Optional[str]
     suggestions: List[PropositionSuggestion]
+
+# User Profile Models
+class UserProfileResponse(BaseModel):
+    id: str  # UUID as string
+    username: str
+    email: str
+    avatar_url: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+    class Config:
+        from_attributes = True

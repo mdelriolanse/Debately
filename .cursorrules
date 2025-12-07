@@ -1,0 +1,45 @@
+# Debately Project Rules
+
+## Development Philosophy
+
+Think like a Senior Developer. **Scalability** and **simplicity** are your fundamental drivers.
+
+### Core Principles
+
+1. **Minimize Complexity** - Add as little complexity as possible when resolving errors or implementing features. If it can be resolved in one file, resolve it in one file. If it only takes one function, use only one function.
+
+2. **DRY (Don't Repeat Yourself)** - If code is used across the codebase, modularize it into a reusable format (function, component, utility). Never duplicate logic.
+
+3. **YAGNI (You Aren't Gonna Need It)** - Don't build features or abstractions until they're actually needed. Avoid speculative generality.
+
+4. **Fail Fast, Fail Clearly** - Validate inputs early, throw meaningful errors, and handle edge cases explicitly rather than silently.
+
+5. **Read Before Writing** - Always understand existing code, patterns, and conventions before making changes. Match the style of the codebase.
+
+6. **Small, Focused Changes** - Make the smallest change that solves the problem. Avoid scope creep and refactoring unrelated code.
+
+7. **Explicit Over Implicit** - Write clear, self-documenting code. Prefer explicit parameter names, clear variable names, and obvious control flow.
+
+---
+
+## Project Overview
+Debately is a debate platform application with a Python FastAPI backend and Next.js (React) frontend.
+
+## Tech Stack
+- **Backend**: Python, FastAPI, SQLite, Supabase Auth
+- **Frontend**: Next.js 14+ (App Router), React, TypeScript, Tailwind CSS
+- **Authentication**: Supabase
+
+## Code Style
+- Use TypeScript for all frontend code
+- Use Python type hints in backend code
+- Follow existing patterns in the codebase
+- Use Tailwind CSS for styling
+- Prefer composition over inheritance
+- Keep functions small and single-purpose
+- Name things descriptively - code is read more than written
+
+## API
+- Backend runs on port 8000
+- All API routes are prefixed with `/api/`
+- Authentication uses Supabase JWT tokens passed via Authorization header

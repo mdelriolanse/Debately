@@ -12,41 +12,33 @@ async def verify_argument(argument_id: int):
     Verify a single argument's validity.
     Runs the fact-checking pipeline and saves results to database.
     """
-    # Get argument from database
     argument = database.get_argument(argument_id)
     if not argument:
         raise HTTPException(status_code=404, detail=f"Argument with id {argument_id} not found")
     
-    # Get the topic/proposition for context
     topic = database.get_topic(argument['topic_id'])
     if not topic:
         raise HTTPException(status_code=404, detail=f"Topic for argument {argument_id} not found")
     
-    try:
-        # Run fact-checking pipeline with debate proposition context
-        verdict = fact_checker.verify_argument(
-            title=argument['title'],
-            content=argument['content'],
-            debate_proposition=topic['proposition']
-        )
-        
-        # Save results to database
-        database.update_argument_validity(
-            argument_id=argument_id,
-            validity_score=verdict.validity_score,
-            validity_reasoning=verdict.reasoning,
-            key_urls=verdict.key_urls
-        )
-        
-        return ValidityVerdictResponse(
-            validity_score=verdict.validity_score,
-            reasoning=verdict.reasoning,
-            key_urls=verdict.key_urls,
-            source_count=verdict.source_count
-        )
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to verify argument: {str(e)}")
+    verdict = fact_checker.verify_argument(
+        title=argument['title'],
+        content=argument['content'],
+        debate_proposition=topic['proposition']
+    )
+    
+    database.update_argument_validity(
+        argument_id=argument_id,
+        validity_score=verdict.validity_score,
+        validity_reasoning=verdict.reasoning,
+        key_urls=verdict.key_urls
+    )
+    
+    return ValidityVerdictResponse(
+        validity_score=verdict.validity_score,
+        reasoning=verdict.reasoning,
+        key_urls=verdict.key_urls,
+        source_count=verdict.source_count
+    )
 
 
 @router.post("/topics/{topic_id}/verify-all", response_model=dict)
@@ -117,18 +109,13 @@ async def get_arguments_sorted_by_validity(
     Get arguments sorted by validity score (highest first, unverified at end).
     Optionally filter by side (pro/con).
     """
-    # Validate topic exists
     topic = database.get_topic(topic_id)
     if not topic:
         raise HTTPException(status_code=404, detail=f"Topic with id {topic_id} not found")
     
-    # Validate side parameter
     if side and side not in ['pro', 'con']:
         raise HTTPException(status_code=400, detail="side query parameter must be 'pro' or 'con'")
     
-    try:
-        arguments = database.get_arguments_sorted_by_validity(topic_id, side)
-        return [ArgumentWithValidityResponse(**arg) for arg in arguments]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch arguments: {str(e)}")
+    arguments = database.get_arguments_sorted_by_validity(topic_id, side)
+    return [ArgumentWithValidityResponse(**arg) for arg in arguments]
 

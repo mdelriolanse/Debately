@@ -1,51 +1,48 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 import database
 import fact_checker
 import claude_service
 from validate_proposition import validate_proposition
+from middleware.auth import get_current_user
 from models import PropositionValidateRequest, PropositionValidationResponse, TopicCreate, TopicResponse, TopicListItem, TopicDetailResponse
+from utils.user import ensure_user_profile
 
 router = APIRouter(prefix="/api/topics", tags=["topics"])
 
 @router.post("/validate-proposition", tags=["topics"])
 async def validate_proposition_endpoint(request: PropositionValidateRequest):
     """Validate a proposition and return suggestions"""
-    try:
-        result = validate_proposition(request.proposition)
-        return PropositionValidationResponse(**result)
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to validate proposition: {str(e)}")
+    result = validate_proposition(request.proposition)
+    return PropositionValidationResponse(**result)
 
 @router.post("", response_model=TopicResponse, status_code=201, tags=["topics"])
-async def create_topic(topic: TopicCreate):
+async def create_topic(
+    topic: TopicCreate,
+    user_data: dict = Depends(get_current_user)
+):
     """Create a new debate topic."""
-    try:
-
-        topic_data = database.create_topic(
-            proposition=topic.proposition,
-            created_by=topic.created_by
-        )
-        if not topic_data:
-            raise HTTPException(status_code=500, detail="Failed to create topic")
-        return TopicResponse(
-            topic_id=topic_data['id'],
-            proposition=topic_data['proposition'],
-            created_by=topic_data['created_by'],
-            created_at=topic_data.get('created_at')
-        )
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create topic: {str(e)}")
+    user_id, username = ensure_user_profile(user_data)
+    
+    topic_data = database.create_topic(
+        proposition=topic.proposition,
+        created_by=username,
+        user_id=user_id
+    )
+    if not topic_data:
+        raise HTTPException(status_code=500, detail="Failed to create topic")
+    
+    return TopicResponse(
+        topic_id=topic_data['id'],
+        proposition=topic_data['proposition'],
+        created_by=topic_data['created_by'],
+        created_at=topic_data.get('created_at')
+    )
 
 @router.get("", response_model=list[TopicListItem])
 async def get_topics():
     """Get all topics with pro/con argument counts."""
-    try:
-        topics = database.get_all_topics()
-        return [TopicListItem(**topic) for topic in topics]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch topics: {str(e)}")
+    topics = database.get_all_topics()
+    return [TopicListItem(**topic) for topic in topics]
 
 @router.get("/{topic_id}", response_model=TopicDetailResponse)
 async def get_topic(topic_id: int):

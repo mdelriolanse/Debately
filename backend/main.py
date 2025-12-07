@@ -3,9 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 import database
-from routes import topics, arguments, summaries, fact_checking, voting
+from routes import topics, arguments, summaries, fact_checking, voting, auth
 import logging
-import traceback
 import os
 
 # Configure logging
@@ -25,6 +24,9 @@ database.migrate_add_votes_column()
 # Create FastAPI app
 app = FastAPI(title="Debately API", version="1.0.0")
 
+# Import HTTPException for exception handlers
+from fastapi import HTTPException
+
 # Add exception handler for validation errors
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -41,27 +43,25 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content={"detail": exc.errors()}
     )
 
-# Add exception handler for HTTP exceptions
+# Add exception handler for HTTPException (logs 500-level errors)
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Log HTTP exceptions (especially 500-level errors)."""
+    if exc.status_code >= 500:
+        logger.error(f"HTTP {exc.status_code} on {request.method} {request.url.path}: {exc.detail}")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail}
+    )
+
+# Add exception handler for all unhandled exceptions
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
-    """Log all exceptions with full traceback."""
-    logger.error(f"Exception on {request.method} {request.url.path}")
-    logger.error(f"Exception type: {type(exc).__name__}")
-    logger.error(f"Exception message: {str(exc)}")
-    logger.error(f"Traceback:\n{traceback.format_exc()}")
-    
-    # Re-raise HTTPException to preserve status codes
-    from fastapi import HTTPException
-    if isinstance(exc, HTTPException):
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={"detail": exc.detail}
-        )
-    
-    # For other exceptions, return 500
+    """Log unhandled exceptions with full traceback."""
+    logger.exception(f"Unhandled exception on {request.method} {request.url.path}")
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"detail": f"Internal server error: {str(exc)}"}
+        content={"detail": "Internal server error"}
     )
 
 # Add logging middleware
@@ -105,6 +105,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(auth.router)
 app.include_router(topics.router)
 app.include_router(arguments.router)
 app.include_router(summaries.router)

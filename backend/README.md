@@ -10,18 +10,34 @@ pip install -r requirements.txt
 ```
 
 2. Set up environment variables:
-   - Copy `.env.example` to `.env`: `cp .env.example .env`
-   - Edit `.env` and update with your actual database credentials and API keys:
+   - Create a `.env` file in the `backend` directory
+   - Add the following environment variables:
      ```
+     # Supabase Configuration (Required for authentication)
+     SUPABASE_URL=https://xxxxx.supabase.co
+     SUPABASE_ANON_KEY=your_anon_key_here
+     
+     # Anthropic API Key (Required for proposition validation and Claude services)
+     ANTHROPIC_API_KEY=your_api_key_here
+     
+     # Tavily API Key (Required for fact checking)
+     TAVILY_API_KEY=your_tavily_api_key_here
+     
+     # Database Configuration
      DB_HOST=localhost
      DB_PORT=5432
      DB_NAME=debate_platform
      DB_USER=postgres
      DB_PASSWORD=your_password
-     ANTHROPIC_API_KEY=your_api_key_here
+     
+     # CORS Configuration (Optional)
+     ALLOWED_ORIGINS=http://localhost:3000
      ```
    
-   **Note:** The `.env` file is gitignored and contains your actual credentials. The `.env.example` file contains sample/placeholder values.
+   **Note:** 
+   - The `.env` file is gitignored and contains your actual credentials
+   - For Supabase setup instructions, see `SUPABASE_AUTH_SETUP.md` in the project root
+   - Get Supabase credentials from Supabase Dashboard → Settings → API
 
 3. Set up PostgreSQL database:
    - Install PostgreSQL if not already installed
