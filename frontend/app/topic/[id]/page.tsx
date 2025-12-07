@@ -223,8 +223,7 @@ export default function TopicPage() {
     
     setSubmittingCommentId(argumentId)
     try {
-      await commentOnArgument({
-        argument_id: argumentId,
+      await commentOnArgument(argumentId, {
         comment: commentText
       })
       
