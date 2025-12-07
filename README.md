@@ -1,5 +1,4 @@
 <div align="center">
-  <img src="frontend/public/logo-icon.png" alt="Debately Logo" width="120" height="120" />
   <h1>Debately</h1>
   <p><strong>AI-powered debate platform for structured discourse</strong></p>
   <p>Create topics, contribute arguments, let AI synthesize understanding. The resilient platform for structured debate.</p>
@@ -9,22 +8,22 @@
 
 ## Overview
 
-Debately is a fact-checked debate platform that uses Claude AI to synthesize arguments, verify claims, and provide evidence-based analysis. Built for the Claude Builders Hackathon 2025, it enables users to engage in structured debates with automatic fact-checking, AI-powered synthesis, and intelligent argument matching.
+Debately is a fact-checked debate platform that uses Claude AI to synthesize arguments, verify claims, and provide evidence-based analysis. It enables users to engage in structured debates with automatic fact-checking, AI-powered synthesis, and intelligent argument matching.
 
 ## Features
 
-- 🤖 **AI-Powered Synthesis** - Claude Sonnet 4 generates comprehensive debate summaries, consensus views, and timelines
-- ✅ **Automatic Fact-Checking** - Claude Haiku + Tavily verify arguments and assign 1-5 star validity scores
-- 🎯 **Relevance Filtering** - AI automatically rejects irrelevant arguments (no spam or off-topic content)
-- 📊 **Evidence-Based Scoring** - Validity scores based on high-quality sources (relevance score > 0.5)
-- 👍 **Voting System** - Users can upvote/downvote arguments to show support
-- 🔗 **Argument Matching** - AI identifies which pro arguments directly rebut con arguments
-- 📈 **Topic Metrics** - View average validity scores, controversy levels, and argument counts
-- 💬 **Comments** - Users can comment on arguments for deeper discussion
-- 🔐 **Authentication** - Secure user authentication via Supabase with Google OAuth
-- 📝 **Proposition Validation** - AI validates and reformulates debate propositions for clarity
-- 🚫 **Contribution Limits** - Per-user contribution limits (25 topics + arguments combined) to ensure quality
-- ⚡ **API Rate Limiting** - Global API call limits (750 per service) to manage costs
+-  **AI-Powered Synthesis** - Claude Sonnet 4 generates comprehensive debate summaries, consensus views, and timelines
+-  **Automatic Fact-Checking** - Claude Haiku + Tavily verify arguments and assign 1-5 star validity scores
+-  **Relevance Filtering** - AI automatically rejects irrelevant arguments (no spam or off-topic content)
+-  **Evidence-Based Scoring** - Validity scores based on high-quality sources (relevance score > 0.5)
+-  **Voting System** - Users can upvote/downvote arguments to show support
+-  **Argument Matching** - AI identifies which pro arguments directly rebut con arguments
+-  **Topic Metrics** - View average validity scores, controversy levels, and argument counts
+-  **Comments** - Users can comment on arguments for deeper discussion
+-  **Authentication** - Secure user authentication via Supabase with Google OAuth
+-  **Proposition Validation** - AI validates and reformulates debate propositions for clarity
+-  **Contribution Limits** - Per-user contribution limits (25 topics + arguments combined) to ensure quality
+-  **API Rate Limiting** - Global API call limits (750 per service) to manage costs
 
 ## Tech Stack
 
@@ -216,12 +215,6 @@ Before saving an argument, the system:
 - Enforced before expensive operations (fact-checking)
 - Prevents abuse and ensures quality
 
-## API Documentation
-
-Once the backend is running, visit:
-- **Swagger UI**: `http://localhost:8000/docs`
-- **ReDoc**: `http://localhost:8000/redoc`
-
 ### Key Endpoints
 
 - `POST /api/topics` - Create a new debate topic
@@ -300,49 +293,3 @@ Once the backend is running, visit:
 - **argument_matches** - AI-identified pro/con argument relationships
 - **votes** - User votes on arguments
 - **api_usage** - API call tracking for rate limiting
-
-## Development
-
-### Running Tests
-
-```bash
-cd backend
-pytest
-```
-
-### Code Style
-
-- **Backend**: Python type hints, PEP 8 style
-- **Frontend**: TypeScript with strict mode, ESLint
-
-### Environment Variables
-
-See setup sections above for required environment variables.
-
-## Deployment
-
-### Backend (Railway/Heroku/etc.)
-
-1. Set all environment variables in your hosting platform
-2. The Dockerfile is configured for production
-3. Uses `PORT` environment variable (defaults to 8080)
-
-### Frontend (Vercel/Netlify)
-
-1. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-2. Set `NEXT_PUBLIC_API_URL` to your backend URL
-3. Deploy using standard Next.js deployment process
-
-## Contributing
-
-This project was built for the Claude Builders Hackathon 2025. Contributions are welcome!
-
-## License
-
-Built for Claude Builders Hackathon 2025
-
----
-
-<div align="center">
-  <p>Made with ❤️ using Claude AI</p>
-</div>
