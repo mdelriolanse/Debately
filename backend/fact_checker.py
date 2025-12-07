@@ -1,34 +1,22 @@
-import os
 import json
 import re
 import logging
-from pathlib import Path
 from typing import Dict, List, Optional
 from anthropic import Anthropic
 from tavily import TavilyClient
-from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+import database
+from config import config
 
 logger = logging.getLogger(__name__)
 
-# Load .env file from the backend directory (works in both local and Docker)
-env_path = Path(__file__).parent / '.env'
-load_dotenv(dotenv_path=env_path)
+# Initialize API clients using immutable config
+claude_client = Anthropic(api_key=config.ANTHROPIC_API_KEY)
+tavily_client = TavilyClient(api_key=config.TAVILY_API_KEY)
 
-# Initialize API clients
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
-
-if not ANTHROPIC_API_KEY:
-    raise ValueError("ANTHROPIC_API_KEY environment variable is required")
-if not TAVILY_API_KEY:
-    raise ValueError("TAVILY_API_KEY environment variable is required")
-
-claude_client = Anthropic(api_key=ANTHROPIC_API_KEY)
-tavily_client = TavilyClient(api_key=TAVILY_API_KEY)
-
-# Use Claude Haiku for fast, cost-effective fact-checking
-CLAUDE_MODEL = "claude-3-haiku-20240307"
+# Use immutable config values
+CLAUDE_MODEL = config.CLAUDE_MODEL_FAST
+API_CALL_LIMIT = config.API_CALL_LIMIT
 
 
 class ValidityVerdict(BaseModel):
@@ -71,6 +59,10 @@ Return ONLY the core factual claim in 2 sentences or less. Remove all opinion, r
 If the argument contains no verifiable factual claims (only opinions, insults, emotional statements, or nonsensical text), return "NO VERIFIABLE FACTUAL CLAIMS"."""
 
     try:
+        # Check API limit before making call
+        if not database.check_api_limit("anthropic", API_CALL_LIMIT):
+            raise RuntimeError("Anthropic API call limit reached (750 calls). Please try again later.")
+        
         message = claude_client.messages.create(
             model=CLAUDE_MODEL,
             max_tokens=200,
@@ -81,6 +73,9 @@ If the argument contains no verifiable factual claims (only opinions, insults, e
                 }
             ]
         )
+        
+        # Increment counter after successful call
+        database.increment_api_call_count("anthropic")
         
         claim = message.content[0].text.strip()
         logger.info(f"Extracted claim: '{claim}'")
@@ -101,11 +96,18 @@ def search_for_evidence(claim: str) -> List[Dict]:
         List of search results from Tavily
     """
     try:
+        # Check API limit before making call
+        if not database.check_api_limit("tavily", API_CALL_LIMIT):
+            raise RuntimeError("Tavily API call limit reached (750 calls). Please try again later.")
+        
         response = tavily_client.search(
             query=claim,
             max_results=10,
             search_depth="advanced"
         )
+        
+        # Increment counter after successful call
+        database.increment_api_call_count("tavily")
         
         # Tavily returns results directly or in a 'results' key
         if isinstance(response, dict):
@@ -238,6 +240,10 @@ IMPORTANT:
 - Ensure all URLs are properly quoted and escaped"""
 
     try:
+        # Check API limit before making call
+        if not database.check_api_limit("anthropic", API_CALL_LIMIT):
+            raise RuntimeError("Anthropic API call limit reached (750 calls). Please try again later.")
+        
         message = claude_client.messages.create(
             model=CLAUDE_MODEL,
             max_tokens=1000,
@@ -248,6 +254,9 @@ IMPORTANT:
                 }
             ]
         )
+        
+        # Increment counter after successful call
+        database.increment_api_call_count("anthropic")
         
         response_text = message.content[0].text.strip()
         

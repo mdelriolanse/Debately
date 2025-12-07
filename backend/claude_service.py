@@ -1,19 +1,13 @@
-import os
 import json
-from pathlib import Path
 from typing import List, Dict
 from anthropic import Anthropic
+import database
+from config import config
 
-# Load .env file from the backend directory (works in both local and Docker)
-env_path = Path(__file__).parent / '.env'
-
-# Initialize Claude client
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-if not ANTHROPIC_API_KEY:
-    raise ValueError("ANTHROPIC_API_KEY environment variable is required")
-
-client = Anthropic(api_key=ANTHROPIC_API_KEY)
-MODEL = "claude-sonnet-4-20250514"
+# Initialize Claude client using immutable config
+client = Anthropic(api_key=config.ANTHROPIC_API_KEY)
+MODEL = config.CLAUDE_MODEL_STANDARD
+API_CALL_LIMIT = config.API_CALL_LIMIT
 
 def generate_summary(proposition: str, pro_arguments: List[Dict], con_arguments: List[Dict]) -> Dict:
     """
@@ -55,6 +49,10 @@ Generate three things (do NOT create new arguments, only synthesize existing):
 Return JSON only: {{"overall_summary": "...", "consensus_view": "...", "timeline_view": [...]}}"""
 
     try:
+        # Check API limit before making call
+        if not database.check_api_limit("anthropic", API_CALL_LIMIT):
+            raise RuntimeError("Anthropic API call limit reached (750 calls). Please try again later.")
+        
         message = client.messages.create(
             model=MODEL,
             max_tokens=4096,
@@ -65,6 +63,9 @@ Return JSON only: {{"overall_summary": "...", "consensus_view": "...", "timeline
                 }
             ]
         )
+        
+        # Increment counter after successful call
+        database.increment_api_call_count("anthropic")
         
         # Extract text from response
         response_text = message.content[0].text.strip()

@@ -2,23 +2,22 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional
 from uuid import UUID
-import os
-from pathlib import Path
-from dotenv import load_dotenv
 from supabase import create_client, Client
 from jose import JWTError, jwt
 import httpx
+import sys
+from pathlib import Path
 
-# Load .env file from the backend directory
-env_path = Path(__file__).parent.parent / '.env'
-load_dotenv(dotenv_path=env_path)
+# Add parent directory to path for config import
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from config import config
 
 # Security scheme
 security = HTTPBearer()
 
-# Supabase client for token verification
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
+# Supabase configuration from immutable config
+SUPABASE_URL = config.SUPABASE_URL
+SUPABASE_ANON_KEY = config.SUPABASE_ANON_KEY
 
 def get_supabase_client() -> Optional[Client]:
     """Get Supabase client for token verification."""

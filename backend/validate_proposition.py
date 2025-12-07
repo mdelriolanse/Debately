@@ -1,21 +1,16 @@
-import os
 import json
-from pathlib import Path
 from typing import List, Dict
 from anthropic import Anthropic
 import logging
+import database
+from config import config
 
 logger = logging.getLogger(__name__)
 
-env_path = Path(__file__).parent / '.env'
-
-# Initialize Claude client
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
-if not ANTHROPIC_API_KEY:
-    raise ValueError("ANTHROPIC_API_KEY environment variable is required")
-
-client = Anthropic(api_key=ANTHROPIC_API_KEY)
-MODEL = "claude-sonnet-4-20250514"
+# Initialize Claude client using immutable config
+client = Anthropic(api_key=config.ANTHROPIC_API_KEY)
+MODEL = config.CLAUDE_MODEL_STANDARD
+API_CALL_LIMIT = config.API_CALL_LIMIT
 
 response_json = """
     {
@@ -96,6 +91,10 @@ prompt_template = """
 
 def validate_proposition(proposition: str):
     try:
+        # Check API limit before making call
+        if not database.check_api_limit("anthropic", API_CALL_LIMIT):
+            raise RuntimeError("Anthropic API call limit reached (750 calls). Please try again later.")
+        
         # Format the prompt template with the user's proposition
         formatted_prompt = prompt_template.format(
             proposition=proposition,
@@ -112,6 +111,9 @@ def validate_proposition(proposition: str):
                 }
             ]
         )
+        
+        # Increment counter after successful call
+        database.increment_api_call_count("anthropic")
 
         response_text = message.content[0].text.strip()
         

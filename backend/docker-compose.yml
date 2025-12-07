@@ -1,3 +1,5 @@
+# Used for development purposes only.
+# Containerize FastAPI backend and database for local development.
 services:
   backend:
     build: .
