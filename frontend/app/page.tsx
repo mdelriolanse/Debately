@@ -592,7 +592,7 @@ export default function Home() {
               {/* Proposition Header */}
               <div className="mb-8">
                 <div className="flex items-center gap-2 mb-3">
-                  <span className="font-mono text-sm text-text-tertiary uppercase tracking-[0.3em]">Topic</span>
+                  <span className="font-mono text-sm text-text-tertiary uppercase tracking-[0.3em]">Organized Layouts</span>
                 </div>
                 <h2 className="text-2xl font-light text-white leading-tight">
                   {SAMPLE_DEBATES[displayIndex].proposition}
@@ -773,6 +773,136 @@ export default function Home() {
                   }`}
                 />
               ))}
+            </div>
+          </div>
+
+          {/* Quality Control Section */}
+          <div className="card p-8">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="font-mono text-sm text-text-tertiary uppercase tracking-[0.3em]">Quality Control</span>
+            </div>
+            <h2 className="text-2xl font-light text-white leading-tight mb-2">
+              AI-powered validation keeps debates productive
+            </h2>
+            <p className="text-sm text-text-tertiary mb-8">
+              Invalid topics and low-quality arguments are automatically detected and rejected
+            </p>
+
+            <div className="grid md:grid-cols-2 gap-6">
+              {/* Rejected Topics */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-1 h-6 bg-red-500 rounded-full" />
+                  <h4 className="text-lg font-semibold text-red-400">Rejected Topics</h4>
+                </div>
+
+                {/* Rejected Topic 1 */}
+                <div className="bg-red-500/5 border border-red-500/30 rounded-xl p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-6 h-6 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <span className="text-red-400 text-sm">✕</span>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-white font-medium mb-2">"The earth is flat"</p>
+                      <div className="p-2 bg-black/30 rounded border border-red-500/20">
+                        <p className="text-xs text-red-300 font-semibold mb-1">Rejected:</p>
+                        <p className="text-xs text-text-tertiary">This is a factually false statement, not a debatable proposition. Scientific consensus confirms Earth is an oblate spheroid.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Rejected Topic 2 */}
+                <div className="bg-red-500/5 border border-red-500/30 rounded-xl p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-6 h-6 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <span className="text-red-400 text-sm">✕</span>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-white font-medium mb-2">"Pizza is the best food"</p>
+                      <div className="p-2 bg-black/30 rounded border border-red-500/20">
+                        <p className="text-xs text-red-300 font-semibold mb-1">Rejected:</p>
+                        <p className="text-xs text-text-tertiary">Purely subjective preference without substantive implications. Debates should address topics with meaningful societal, ethical, or policy dimensions.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Rejected Topic 3 */}
+                <div className="bg-red-500/5 border border-red-500/30 rounded-xl p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-6 h-6 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <span className="text-red-400 text-sm">✕</span>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-white font-medium mb-2">"[Ethnic group] are inferior"</p>
+                      <div className="p-2 bg-black/30 rounded border border-red-500/20">
+                        <p className="text-xs text-red-300 font-semibold mb-1">Rejected:</p>
+                        <p className="text-xs text-text-tertiary">Promotes discrimination and hatred. Topics targeting protected groups with dehumanizing claims are not permitted.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Rejected Arguments */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-1 h-6 bg-orange-500 rounded-full" />
+                  <h4 className="text-lg font-semibold text-orange-400">Flagged Arguments</h4>
+                </div>
+
+                {/* Flagged Argument 1 */}
+                <div className="bg-orange-500/5 border border-orange-500/30 rounded-xl p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-6 h-6 rounded-full bg-orange-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <span className="text-orange-400 text-sm">!</span>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-orange-300 text-xs font-semibold mb-1">On: "Climate change requires urgent action"</p>
+                      <p className="text-white font-medium mb-2">"It was cold this winter so global warming is fake"</p>
+                      <div className="p-2 bg-black/30 rounded border border-orange-500/20">
+                        <p className="text-xs text-orange-300 font-semibold mb-1">Low Quality (1/5):</p>
+                        <p className="text-xs text-text-tertiary">Confuses weather with climate. Local temperature fluctuations don't contradict long-term global warming trends documented across decades.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Flagged Argument 2 */}
+                <div className="bg-orange-500/5 border border-orange-500/30 rounded-xl p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-6 h-6 rounded-full bg-orange-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <span className="text-orange-400 text-sm">!</span>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-orange-300 text-xs font-semibold mb-1">On: "Universal healthcare improves outcomes"</p>
+                      <p className="text-white font-medium mb-2">"My uncle had to wait 3 months in Canada"</p>
+                      <div className="p-2 bg-black/30 rounded border border-orange-500/20">
+                        <p className="text-xs text-orange-300 font-semibold mb-1">Low Quality (2/5):</p>
+                        <p className="text-xs text-text-tertiary">Single anecdote without systemic analysis. Needs population-level data comparing wait times, outcomes, and costs across healthcare systems.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Flagged Argument 3 */}
+                <div className="bg-orange-500/5 border border-orange-500/30 rounded-xl p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-6 h-6 rounded-full bg-orange-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <span className="text-orange-400 text-sm">!</span>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-orange-300 text-xs font-semibold mb-1">On: "AI regulation is necessary"</p>
+                      <p className="text-white font-medium mb-2">"Everyone knows AI will destroy humanity"</p>
+                      <div className="p-2 bg-black/30 rounded border border-orange-500/20">
+                        <p className="text-xs text-orange-300 font-semibold mb-1">Low Quality (1/5):</p>
+                        <p className="text-xs text-text-tertiary">Appeals to vague consensus without evidence. Existential AI risk is debated among experts; argument needs specific mechanisms and citations.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
