@@ -1,6 +1,6 @@
 /**
  * API client for the Debate Platform backend
- * Base URL: http://localhost:8000
+ * Base URL configured via NEXT_PUBLIC_API_URL environment variable
  */
 
 import { createClient } from '@/lib/supabase/client'

@@ -23,7 +23,8 @@ export default function AuthCallback() {
         if (data.session) {
           // Sync user profile with backend
           try {
-            const response = await fetch('http://localhost:8000/api/auth/sync-profile', {
+            const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+            const response = await fetch(`${apiUrl}/api/auth/sync-profile`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
