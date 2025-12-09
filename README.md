@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>Debately</h1>
+  <h1>debately.</h1>
   <p><strong>AI-powered debate platform for structured discourse</strong></p>
   <p>Create topics, contribute arguments, let AI synthesize understanding. The resilient platform for structured debate.</p>
 </div>
